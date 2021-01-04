@@ -21,6 +21,12 @@ static inline struct bmk_cpu_info *bmk_get_cpu_info(void)
 	return &bmk_xen_cpu_info;
 }
 
+#define bmk_get_cpu(x)		(bmk_xen_cpu_info.x)
+#define bmk_set_cpu(x, v)							\
+	do {											\
+		bmk_xen_cpu_info.x = (v);					\
+	} while (0)
+
 static inline void bmk_cpu_relax(void)
 {
 	__asm__ __volatile__ ("pause" ::: "memory");

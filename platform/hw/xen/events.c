@@ -67,7 +67,7 @@ void minios_evtdev_handler(evtchn_port_t port, struct pt_regs * regs,
 void unbind_all_ports(void)
 {
     int i;
-    unsigned long cpu = bmk_get_cpu_info()->cpu;
+    unsigned long cpu = bmk_get_cpu(cpu);
     shared_info_t *s = HYPERVISOR_shared_info;
     vcpu_info_t   *vcpu_info = &s->vcpu_info[cpu];
     int rc;
@@ -180,7 +180,7 @@ evtchn_port_t minios_bind_virq(uint32_t virq, evtchn_handler_t handler,
 
     /* Try to bind the virq to a port */
     op.virq = virq;
-    op.vcpu = bmk_get_cpu_info()->cpu;
+    op.vcpu = bmk_get_cpu(cpu);
 
     if ((rc = HYPERVISOR_event_channel_op(EVTCHNOP_bind_virq, &op)) != 0)
     {

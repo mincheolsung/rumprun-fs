@@ -236,18 +236,17 @@ rtc_gettimeofday(void)
 static bmk_time_t
 tscclock_monotonic(void)
 {
-	struct bmk_cpu_info *cpu = bmk_get_cpu_info();
 	uint64_t tsc_now, tsc_delta;
 
 	/*
 	 * Update time_base (monotonic time) and tsc_base (TSC time).
 	 */
 	tsc_now = rdtsc();
-	tsc_delta = tsc_now - cpu->tsc_base;
-	cpu->time_base += mul64_32(tsc_delta, tsc_mult);
-	cpu->tsc_base = tsc_now;
+	tsc_delta = tsc_now - bmk_get_cpu(tsc_base);
+	bmk_add_cpu(time_base, mul64_32(tsc_delta, tsc_mult));
+	bmk_set_cpu(tsc_base, tsc_now);
 
-	return cpu->time_base;
+	return bmk_get_cpu(time_base);
 }
 
 extern struct bmk_cpu_info x86_cpu_info[];
@@ -255,10 +254,8 @@ extern struct bmk_cpu_info x86_cpu_info[];
 static void
 tscclock_init_notmain(void)
 {
-	struct bmk_cpu_info *cpu = bmk_get_cpu_info();
-
-	cpu->tsc_base = rdtsc();
-	cpu->time_base = x86_cpu_info[0].time_base;
+	bmk_set_cpu(tsc_base, rdtsc());
+	bmk_set_cpu(time_base, x86_cpu_info[0].time_base);
 }
 
 /*
@@ -267,8 +264,8 @@ tscclock_init_notmain(void)
 static int
 tscclock_init(void)
 {
-	struct bmk_cpu_info *cpu = bmk_get_cpu_info();
 	uint64_t tsc_freq;
+	uint64_t tsc_base;
 
 	/* Initialise i8254 timer channel 0 to mode 2 at 100 Hz */
 	outb(TIMER_MODE, TIMER_SEL0 | TIMER_RATEGEN | TIMER_16BIT);
@@ -287,9 +284,10 @@ tscclock_init(void)
 	 * using the i8254 timer.
 	 */
 	spl0();
-	cpu->tsc_base = rdtsc();
+	tsc_base = rdtsc();
+	bmk_set_cpu(tsc_base, tsc_base);
 	i8254_delay(100000);
-	tsc_freq = (rdtsc() - cpu->tsc_base) * 10;
+	tsc_freq = (rdtsc() - tsc_base) * 10;
 	splhigh();
 	bmk_printf("x86_initclocks(): TSC frequency estimate is %llu Hz\n",
 		(unsigned long long)tsc_freq);
@@ -305,7 +303,7 @@ tscclock_init(void)
 	 * Monotonic time begins at tsc_base (first read of TSC before
 	 * calibration).
 	 */
-	cpu->time_base = mul64_32(cpu->tsc_base, tsc_mult);
+	bmk_set_cpu(time_base, mul64_32(tsc_base, tsc_mult));
 
 	_x86_initclocks_notmain = tscclock_init_notmain;
 	_x86_cpu_clock_monotonic = tscclock_monotonic;
@@ -318,7 +316,7 @@ tscclock_init(void)
 static inline bmk_time_t
 _pvclock_monotonic(void)
 {
-	unsigned long cpu = bmk_get_cpu_info()->cpu;
+	unsigned long cpu = bmk_get_cpu(cpu);
 	uint32_t version;
 	uint64_t delta, time_now;
 
@@ -388,7 +386,7 @@ static uint32_t msr_kvm_system_time;
 static void
 pvclock_xen_init_notmain(void)
 {
-	unsigned long cpu = bmk_get_cpu_info()->cpu;
+	unsigned long cpu = bmk_get_cpu(cpu);
 
 	pvclock_ti[cpu] = (struct pvclock_vcpu_time_info *) &HYPERVISOR_shared_info->vcpu_info[cpu].time;
 }
@@ -396,7 +394,7 @@ pvclock_xen_init_notmain(void)
 static void
 pvclock_kvm_init_notmain(void)
 {
-	unsigned long cpu = bmk_get_cpu_info()->cpu;
+	unsigned long cpu = bmk_get_cpu(cpu);
 
 	pvclock_ti[cpu] = (struct pvclock_vcpu_time_info *) _kvm_pvclock_ti + cpu;
 	__asm__ __volatile("wrmsr" ::
@@ -577,13 +575,12 @@ bmk_platform_cpu_clock_epochoffset(void)
 void
 bmk_platform_cpu_block(bmk_time_t until)
 {
-	struct bmk_cpu_info *cpu = bmk_get_cpu_info();
 	bmk_time_t now, delta_ns;
 	uint64_t delta_ticks;
 	unsigned int ticks;
 	int s;
 
-	bmk_assert(cpu->spldepth > 0);
+	bmk_assert(bmk_get_cpu(spldepth) > 0);
 
 	/*
 	 * Return if called too late.  Doing do ensures that the time
@@ -638,11 +635,11 @@ bmk_platform_cpu_block(bmk_time_t until)
 	 * able to distinguish if the interrupt was the PIT interrupt
 	 * and no other, but this will do for now.
 	 */
-	s = cpu->spldepth;
-	cpu->spldepth = 0;
+	s = bmk_get_cpu(spldepth);
+	bmk_set_cpu(spldepth, 0);
 	__asm__ __volatile__(
 		"sti;\n"
 		"hlt;\n"
 		"cli;\n");
-	cpu->spldepth = s;
+	bmk_set_cpu(spldepth, s);
 }

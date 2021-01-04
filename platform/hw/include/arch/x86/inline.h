@@ -1,5 +1,7 @@
 #include <bmk-pcpu/pcpu.h>
 
+void __attribute__((noreturn)) splfatal(void);
+
 static inline uint8_t
 inb(uint16_t port)
 {
@@ -39,17 +41,15 @@ splhigh(void)
 {
 
 	__asm__ __volatile__("cli");
-	bmk_get_cpu_info()->spldepth++;
+	if (bmk_add_cpu(spldepth, 1))
+		splfatal();
 }
 
 static inline void
 spl0(void)
 {
-	struct bmk_cpu_info *cpu = bmk_get_cpu_info();
 
-	if (cpu->spldepth == 0)
-		bmk_platform_halt("out of interrupt depth!");
-	if (--cpu->spldepth == 0)
+	if (bmk_sub_cpu(spldepth, 1))
 		__asm__ __volatile__("sti");
 }
 

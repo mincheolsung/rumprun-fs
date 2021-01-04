@@ -28,6 +28,13 @@
 #include <bmk-core/platform.h>
 #include <bmk-core/printf.h>
 
+void __attribute__((noreturn))
+splfatal(void)
+{
+
+	bmk_platform_halt("out-of-bounds interrupt depth!");
+}
+
 /*
  * splhigh()/spl0() internally track depth
  */

@@ -299,8 +299,7 @@ schedule(struct bmk_block_data *data)
 {
 	struct bmk_thread *prev, *next, *thread;
 	struct bmk_thread *idle_thread;
-	struct bmk_cpu_info *info = bmk_get_cpu_info();
-	unsigned long cpuidx = info->cpu;
+	unsigned long cpuidx = bmk_get_cpu(cpu);
 	size_t idx;
 
 	prev = bmk_current;
@@ -368,7 +367,7 @@ schedule(struct bmk_block_data *data)
 		}
 		bmk_simple_lock_exit(&timeq_lock);
 
-		idle_thread = info->idle_thread;
+		idle_thread = bmk_get_cpu(idle_thread);
 		if (prev != idle_thread) {
 			next = idle_thread;
 			break;
@@ -763,12 +762,11 @@ void __attribute__((noreturn))
 bmk_sched_startmain(void (*mainfun)(void *), void *arg)
 {
 	struct bmk_thread *thread;
-	struct bmk_cpu_info *info = bmk_get_cpu_info();
 	struct bmk_thread initthread;
 
-	thread = do_sched_create("idle", NULL, 0, (unsigned int) info->cpu,
+	thread = do_sched_create("idle", NULL, 0, (unsigned int) bmk_get_cpu(cpu),
 			idle_thread, NULL, NULL, 0, false);
-	info->idle_thread = thread;
+	bmk_set_cpu(idle_thread, thread);
 	bmk_memset(&initthread, 0, sizeof(initthread));
 	bmk_strcpy(initthread.bt_name, "init");
 
