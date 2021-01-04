@@ -79,6 +79,7 @@ LIST_HEAD(freebucket, memalloc_freeblk);
 
 #define MINSHIFT 5
 #define	LOCALBUCKETS (BMK_PCPU_PAGE_SHIFT - MINSHIFT)
+#define MINSIZE (1UL << MINSHIFT)
 #define MINALIGN 16
 static struct freebucket freebuckets[LOCALBUCKETS];
 
@@ -93,19 +94,19 @@ static bmk_simple_lock_t malloc_slock = BMK_SIMPLE_LOCK_INITIALIZER;
 #define malloc_unlock()	bmk_simple_lock_exit(&malloc_slock)
 
 static void *
-morecore(int bucket)
+morecore(unsigned bucket)
 {
 	void *rv;
 	uint8_t *p;
 	unsigned long sz;		/* size of desired block */
 	unsigned long nblks;		/* how many blocks we get */
 
-	sz = 1<<(bucket+MINSHIFT);
-	nblks = BMK_PCPU_PAGE_SIZE / sz;
-	bmk_assert(nblks > 1);
-
 	if ((p = rv = bmk_pgalloc_one()) == NULL)
 		return NULL;
+
+	nblks = (BMK_PCPU_PAGE_SIZE / MINSIZE) >> bucket;
+	bmk_assert(nblks > 1);
+	sz = MINSIZE << bucket;
 
 	/*
 	 * Add new memory allocated to that on
@@ -181,7 +182,7 @@ bmk_memalloc(unsigned long nbytes, unsigned long align, enum bmk_memwho who)
 	 * stored in hash buckets which satisfies request.
 	 * Account for space used per block for accounting.
 	 */
-	if (allocbytes < 1<<MINSHIFT) {
+	if (allocbytes < MINSIZE) {
 		bucket = 0;
 	} else {
 		bucket = 8*sizeof(allocbytes)
@@ -192,7 +193,7 @@ bmk_memalloc(unsigned long nbytes, unsigned long align, enum bmk_memwho who)
 
 	/* handle with page allocator? */
 	if (bucket >= LOCALBUCKETS) {
-		hdr = bmk_pgalloc(bucket+MINSHIFT - BMK_PCPU_PAGE_SHIFT);
+		hdr = bmk_pgalloc(bucket + MINSHIFT - BMK_PCPU_PAGE_SHIFT);
 	} else {
 		hdr = bucketalloc(bucket);
 	}
@@ -327,15 +328,16 @@ bmk_memrealloc_user(void *cp, unsigned long nbytes)
 	alignpad = hdr->mh_alignpad;
 
 	/* don't bother "compacting".  don't like it?  don't use realloc! */
-	if (((1<<(size+MINSHIFT)) - alignpad) >= nbytes)
+	size = (MINSIZE << size) - alignpad;
+	if (size >= nbytes)
 		return cp;
 
 	/* we're gonna need a bigger bucket */
-	np = bmk_memalloc(nbytes, 8, BMK_MEMWHO_USER);
+	np = bmk_memalloc(nbytes, 0, BMK_MEMWHO_USER);
 	if (np == NULL)
 		return NULL;
 
-	bmk_memcpy(np, cp, (1<<(size+MINSHIFT)) - alignpad);
+	bmk_memcpy(np, cp, size);
 	bmk_memfree(cp, BMK_MEMWHO_USER);
 	return np;
 }

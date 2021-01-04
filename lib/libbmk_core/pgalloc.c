@@ -142,8 +142,8 @@ allocated_in_map(void *addr)
 	unsigned long first_page = va_to_pg(va);			\
 	curr_idx= first_page / PAGES_PER_MAPWORD;			\
 	start	= first_page & (PAGES_PER_MAPWORD-1);			\
-	end_idx	= (first_page + nr_pages) / PAGES_PER_MAPWORD;		\
-	end	= (first_page + nr_pages) & (PAGES_PER_MAPWORD-1);
+	end_idx	= (first_page + np) / PAGES_PER_MAPWORD;		\
+	end	= (first_page + np) & (PAGES_PER_MAPWORD-1);
 
 static void
 map_alloc(void *virt, unsigned long nr_pages)
@@ -154,7 +154,7 @@ map_alloc(void *virt, unsigned long nr_pages)
 		alloc_bitmap[curr_idx] |= ((1UL<<end)-1) & -(1UL<<start);
 	} else {
 		alloc_bitmap[curr_idx] |= -(1UL<<start);
-		while (++curr_idx < end_idx)
+		while (++curr_idx != end_idx)
 			alloc_bitmap[curr_idx] = ~0UL;
 		alloc_bitmap[curr_idx] |= (1UL<<end)-1;
 	}
