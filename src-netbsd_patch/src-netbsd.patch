@@ -1,0 +1,75 @@
+diff --git a/sys/rump/include/rump/rumpuser.h b/sys/rump/include/rump/rumpuser.h
+index bbdcbb0cc377..ccf2fcb6657b 100644
+--- a/sys/rump/include/rump/rumpuser.h
++++ b/sys/rump/include/rump/rumpuser.h
+@@ -38,6 +38,7 @@
+ #endif
+ struct lwp;
+ 
++#include <sys/types.h>
+ /*
+  * init
+  */
+@@ -67,6 +68,17 @@ struct rumpuser_hyperup {
+ };
+ int rumpuser_init(int, const struct rumpuser_hyperup *);
+ 
++/* filesystem server */
++typedef struct file file_t;
++file_t *rumpuser_fd_getfile(unsigned fd);
++
++typedef long int register_t;
++typedef int sy_call_t(struct lwp *, const void *, register_t *);
++extern sy_call_t rumpuser_fsdom_open;
++extern sy_call_t rumpuser_fsdom_read;
++extern sy_call_t rumpuser_fsdom_write;
++extern sy_call_t rumpuser_fsdom_close;
++
+ /*
+  * memory allocation
+  */
+diff --git a/sys/rump/librump/rumpkern/rumpkern_syscalls.c b/sys/rump/librump/rumpkern/rumpkern_syscalls.c
+index 96a15f660e92..7c4134cba9ec 100644
+--- a/sys/rump/librump/rumpkern/rumpkern_syscalls.c
++++ b/sys/rump/librump/rumpkern/rumpkern_syscalls.c
+@@ -78,9 +78,9 @@ extern sy_call_t sys_kqueue1;
+ extern sy_call_t sys_clock_nanosleep;
+ 
+ static const struct rump_onesyscall mysys[] = {
+-	{ 3,	sys_read },
+-	{ 4,	sys_write },
+-	{ 6,	sys_close },
++	{ 3,	rumpuser_fsdom_read },
++	{ 4,	rumpuser_fsdom_write },
++	{ 6,	rumpuser_fsdom_close },
+ 	{ 20,	sys_getpid_with_ppid },
+ 	{ 23,	sys_setuid },
+ 	{ 24,	sys_getuid_with_euid },
+diff --git a/sys/rump/librump/rumpvfs/rumpvfs_syscalls.c b/sys/rump/librump/rumpvfs/rumpvfs_syscalls.c
+index 4ab1597c337d..351800411dbb 100644
+--- a/sys/rump/librump/rumpvfs/rumpvfs_syscalls.c
++++ b/sys/rump/librump/rumpvfs/rumpvfs_syscalls.c
+@@ -113,7 +113,7 @@ extern sy_call_t sys_posix_fallocate;
+ extern sy_call_t sys_fdiscard;
+ 
+ static const struct rump_onesyscall mysys[] = {
+-	{ 5,	sys_open },
++	{ 5,	rumpuser_fsdom_open},
+ 	{ 9,	sys_link },
+ 	{ 10,	sys_unlink },
+ 	{ 12,	sys_chdir },
+diff --git a/sys/sys/cdefs.h b/sys/sys/cdefs.h
+index e051e082e900..9f940446d8f1 100644
+--- a/sys/sys/cdefs.h
++++ b/sys/sys/cdefs.h
+@@ -498,8 +498,10 @@
+  * didn't permit keeping the keywords out of the application namespace).
+  */
+ #if __GNUC_PREREQ__(2, 7) || defined(__lint__)
++#ifndef __printflike
+ #define __printflike(fmtarg, firstvararg)	\
+ 	    __attribute__((__format__ (__printf__, fmtarg, firstvararg)))
++#endif
+ #ifndef __syslog_attribute__
+ #define __syslog__ __printf__
+ #endif

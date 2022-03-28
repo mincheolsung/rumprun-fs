@@ -44,7 +44,7 @@ void _minios_do_hypervisor_callback(struct pt_regs *regs)
 {
     unsigned long  l1, l2, l1i, l2i;
     unsigned int   port;
-    unsigned long  cpu = bmk_get_cpu(cpu);
+    unsigned long  cpu = bmk_get_cpu_info()->cpu;
     shared_info_t *s = HYPERVISOR_shared_info;
     vcpu_info_t   *vcpu_info = &s->vcpu_info[cpu];
 
@@ -79,7 +79,7 @@ void minios_force_evtchn_callback(void)
 {
     int save;
     vcpu_info_t *vcpu;
-    vcpu = &HYPERVISOR_shared_info->vcpu_info[bmk_get_cpu(cpu)];
+    vcpu = &HYPERVISOR_shared_info->vcpu_info[bmk_get_cpu_info()->cpu];
     save = vcpu->evtchn_upcall_mask;
 
     while (vcpu->evtchn_upcall_pending) {
@@ -101,7 +101,7 @@ inline void minios_mask_evtchn(uint32_t port)
 inline void minios_unmask_evtchn(uint32_t port)
 {
     shared_info_t *s = HYPERVISOR_shared_info;
-    vcpu_info_t *vcpu_info = &s->vcpu_info[bmk_get_cpu(cpu)];
+    vcpu_info_t *vcpu_info = &s->vcpu_info[bmk_get_cpu_info()->cpu];
 
     synch_clear_bit(port, &s->evtchn_mask[0]);
 

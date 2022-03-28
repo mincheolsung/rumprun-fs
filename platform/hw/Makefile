@@ -1,4 +1,5 @@
 include ../../global.mk
+include ../../filesystem.mk
 include ${BUILDRUMP_TOOLFLAGS}
 
 default: all
@@ -28,6 +29,8 @@ endif
 ARCHDIR?= ${MACHINE}
 HW_MACHINE_ARCH?= ${MACHINE_GNU_ARCH}
 
+INSTALLTGTS= librumpfs_myfs_install
+
 CPPFLAGS+=	-isystem ../xen/xen/include
 CFLAGS+=	-D__XEN_INTERFACE_VERSION__=0x00030205
 
@@ -47,7 +50,7 @@ OBJS:=	$(patsubst %.c,${RROBJ}/platform/%.o,${SRCS}) \
 
 .PHONY:	clean cleandir all links
 
-all:  links archdirs xendir ${MAINOBJ} ${TARGETS}
+all:  links archdirs xendir xenlibs ${MAINOBJ} ${TARGETS}
 
 ${RROBJ}/include/hw/machine:
 	@mkdir -p ${RROBJ}/include/hw
@@ -65,11 +68,15 @@ ${RROBJ}/platform/%.o: %.c
 ${RROBJ}/platform/%.o: %.S
 	${CC} -D_LOCORE ${CPPFLAGS} ${CFLAGS} -c $< -o $@
 
-${MAINOBJ}: ${OBJS} platformlibs
+$(eval $(call BUILDLIB_target,librumpfs_myfs,.))
+
+xenlibs: ${RROBJLIB}/librumpfs_myfs/librumpfs_myfs.a
+
+${MAINOBJ}: ${OBJS} platformlibs xenlibs
 	${CC} -nostdlib ${CFLAGS} ${LDFLAGS} -Wl,-r ${OBJS} -o $@ \
 	    -L${RROBJLIB}/libbmk_core -L${RROBJLIB}/libbmk_rumpuser \
 	    -Wl,--whole-archive -lbmk_rumpuser -lbmk_core -Wl,--no-whole-archive
-	${OBJCOPY} -w -G bmk_* -G rumpuser_* -G jsmn_* \
+	${OBJCOPY} -w -G bmk_* -G rumpuser_* -G jsmn_* -G backend_* -G frontend_* \
 	    -G rumprun_platform_rumpuser_init -G _start $@
 
 clean: commonclean
