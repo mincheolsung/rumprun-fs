@@ -30,7 +30,7 @@
 #define NR_RESERVED_ENTRIES 8
 
 /* NR_GRANT_FRAMES must be less than or equal to that configured in Xen */
-#define NR_GRANT_FRAMES 8
+#define NR_GRANT_FRAMES 320
 #define NR_GRANT_ENTRIES (NR_GRANT_FRAMES * PAGE_SIZE / sizeof(grant_entry_t))
 
 extern grant_entry_t *gnttab_table;
@@ -172,6 +172,7 @@ init_gnttab(void)
     unsigned long page = (unsigned long) gnttab_table >> PAGE_SHIFT;
     int i;
 
+    bmk_printf("num tab: %lld\n", NR_GRANT_ENTRIES);
     init_SEMAPHORE(&gnttab_sem, 0);
 #ifdef GNT_DEBUG
     bmk_memset(inuse, 1, sizeof(inuse));

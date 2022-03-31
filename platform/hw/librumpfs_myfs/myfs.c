@@ -7,50 +7,10 @@
 
 filedesc_t *fdesc;
 
-#ifdef FSDOM_FRONTEND
-// frontend
 file_t *rump_fd_getfile(unsigned fd)
 {
         aprint_normal("rump_fd_getfile(%u)\n", fd);
         return fd_getfile(fd);
-}
-/*
-void rump_init_fdesc(void)
-{
-        aprint_normal("rump_init_fdesc\n");
-        fdesc = fd_init(NULL);
-}
-*/
-
-int rump_fsdom_open(struct lwp *l, const void *uap, register_t *retval)
-{
-        //aprint_normal("rump_fsdom_open\n");
-        return sys_open(l, (const struct sys_open_args *)uap, retval);
-}
-
-int rump_fsdom_read(struct lwp *l, const void *uap, register_t *retval)
-{
-        //aprint_normal("rump_fsdom_read\n");
-        return sys_read(l,(const struct sys_read_args *) uap, retval);
-}
-int rump_fsdom_write(struct lwp *l, const void *uap, register_t *retval)
-{
-        //aprint_normal("rump_fsdom_write\n");
-        return sys_write(l, (const struct sys_write_args *)uap, retval);
-}
-int rump_fsdom_close(struct lwp *l, const void *uap, register_t *retval)
-{
-        //aprint_normal("rump_fsdom_close\n");
-        return sys_close(l, (const struct sys_close_args *)uap, retval);
-}
-
-#else
-// backend
-file_t *rump_fd_getfile(unsigned fd)
-{
-	aprint_normal("rump_fd_getfile(%u)\n", fd);
-	return NULL;
-	//return fd_getfile(fd);
 }
 
 int rump_fsdom_open(const char * path, int flags, mode_t mode, register_t *retval)
@@ -126,4 +86,3 @@ int rump_fsdom_fcntl(int fd, int cmd, void *arg, register_t *retval)
 
 	return sys_fcntl(curlwp, &syscall_args, retval);
 }
-#endif

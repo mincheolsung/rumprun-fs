@@ -354,7 +354,7 @@ x86_xen_init(void)
 	if (!xen_base)
 		return;
 
-	gnttab_table = bmk_pgalloc(3); /* NR_GRANT_FRAMES pages */
+	//gnttab_table = bmk_pgalloc(3); /* NR_GRANT_FRAMES pages */
 	init_gnttab();
 	init_events();
 

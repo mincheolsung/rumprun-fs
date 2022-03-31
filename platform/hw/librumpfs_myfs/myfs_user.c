@@ -6,19 +6,22 @@
 #include <xen/fs.h>
 #include <xen/fs_syscall.h>
 
-#include "myfs_user.h"
 #include "myfs.h"
 
 #include <stdatomic.h>
 
-#ifdef FSDOM_FRONTEND
 void rumpuser_fsdom_init(void)
 {
+#ifdef FSDOM_FRONTEND
         frontend_init();
+#else
+	backend_init();
+#endif
 }
 
 int rumpuser_fsdom_open(struct lwp *l, const void *uap, register_t *retval)
 {
+#ifdef FSDOM_FRONTEND
         /* {
                 syscallarg(const char *) path;
                 syscallarg(int)          flags;
@@ -36,10 +39,14 @@ int rumpuser_fsdom_open(struct lwp *l, const void *uap, register_t *retval)
         bmk_printf("ret: %d, retval: %ld\n", ret, *retval);
 
         return ret;
+#else
+	return 0;
+#endif
 }
 
 int rumpuser_fsdom_read(struct lwp *l, const void *uap, register_t *retval)
 {
+#ifdef FSDOM_FRONTEND
         /* {
                 syscallarg(int)          fd;
                 syscallarg(void *)       buf;
@@ -54,10 +61,14 @@ int rumpuser_fsdom_read(struct lwp *l, const void *uap, register_t *retval)
         args.call_id = READ;
 
         return frontend_syscall(&args, retval);
+#else
+	return 0;
+#endif
 }
 
 int rumpuser_fsdom_write(struct lwp *l, const void *uap, register_t *retval)
 {
+#ifdef FSDOM_FRONTEND
         /* {
                 syscallarg(int)          fd;
                 syscallarg(void *)       buf;
@@ -72,10 +83,14 @@ int rumpuser_fsdom_write(struct lwp *l, const void *uap, register_t *retval)
         args.call_id = WRITE;
 
         return frontend_syscall(&args, retval);
+#else
+	return 0;
+#endif
 }
 
 int rumpuser_fsdom_fcntl(struct lwp *l, const void *uap, register_t *retval)
 {
+#ifdef FSDOM_FRONTEND
         /* {
                 syscallarg(int)         fd;
                 syscallarg(int)         cmd;
@@ -90,16 +105,23 @@ int rumpuser_fsdom_fcntl(struct lwp *l, const void *uap, register_t *retval)
         args.call_id = FCNTL;
 
         return frontend_syscall(&args, retval);
+#else
+	return 0;
+#endif
 }
 
 int rumpuser_fsdom_close(struct lwp *l, const void* uap, register_t *retval)
 {
+#ifdef FSDOM_FRONTEND
         /* {
                 syscallarg(int) fd;
         } */
 
         //bmk_printf("rumpuser_fsdom_close\n");
         return rump_fsdom_close(l, uap, retval);
+#else
+	return 0;
+#endif
 }
 
 file_t *rumpuser_fd_getfile(unsigned fd)
@@ -107,44 +129,3 @@ file_t *rumpuser_fd_getfile(unsigned fd)
         bmk_printf("rumpuser_fd_getfile(%u)\n", fd);
         return rump_fd_getfile(fd);
 }
-
-#else
-void rumpuser_fsdom_init(void)
-{
-	backend_init();
-}
-
-int rumpuser_fsdom_open(struct lwp *l, const void *uap, register_t *retval)
-{
-	//bmk_printf("rumpuser_fsdom_open\n");
-	//return rump_fsdom_open(l, uap, retval);
-	return 0;
-}
-
-int rumpuser_fsdom_read(struct lwp *l, const void *uap, register_t *retval)
-{
-	//bmk_printf("rumpuser_fsdom_read\n");
-	//return rump_fsdom_read(l, uap, retval);
-	return 0;
-}
-
-int rumpuser_fsdom_write(struct lwp *l, const void *uap, register_t *retval)
-{
-	//bmk_printf("rumpuser_fsdom_write\n");
-	//return rump_fsdom_write(l, uap, retval);
-	return 0;
-}
-
-int rumpuser_fsdom_close(struct lwp *l, const void* uap, register_t *retval)
-{
-	//bmk_printf("rumpuser_fsdom_close\n");
-	//return rump_fsdom_close(l, uap, retval);
-	return 0;
-}
-
-file_t *rumpuser_fd_getfile(unsigned fd)
-{
-	//bmk_printf("rumpuser_fd_getfile(%u)\n", fd);
-	return rump_fd_getfile(fd);
-}
-#endif

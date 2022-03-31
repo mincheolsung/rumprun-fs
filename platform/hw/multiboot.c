@@ -34,7 +34,12 @@
 
 #include <bmk-pcpu/pcpu.h>
 
+#include <mini-os/gnttab.h>
+#include <xen/memory.h>
+
 #define MEMSTART 0x100000
+
+extern grant_entry_t *gnttab_table;
 
 static int
 parsemem(uint32_t addr, uint32_t len)
@@ -61,7 +66,9 @@ parsemem(uint32_t addr, uint32_t len)
 	osend = bmk_round_page((unsigned long)_end);
 	bmk_assert(osend > mbm->addr && osend < mbm->addr + mbm->len);
 
-	bmk_pgalloc_loadmem(osend, mbm->addr + mbm->len);
+	gnttab_table = (void*)bmk_trunc_page((unsigned long)mbm->addr + mbm->len)  - 40 * 4096U;
+
+	bmk_pgalloc_loadmem(osend, (unsigned long)gnttab_table);
 
 	bmk_memsize = mbm->addr + mbm->len - osend;
 

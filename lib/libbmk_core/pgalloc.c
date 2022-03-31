@@ -307,6 +307,13 @@ carverange(unsigned long addr, unsigned long range)
 	}
 }
 
+/* Get range of mem that the backend will map */
+static unsigned long mem_range[2];
+unsigned long *bmk_mem_range(void)
+{
+        return mem_range;
+}
+
 /*
  * Load [min,max] as available addresses.
  */
@@ -352,6 +359,9 @@ bmk_pgalloc_loadmem(unsigned long min, unsigned long max)
 	map_free((void *)min, range>>BMK_PCPU_PAGE_SHIFT);
 
 	carverange(min, range);
+
+	mem_range[0] = min;
+        mem_range[1] = max;
 }
 
 /* can we allocate for given align from freelist index i? */

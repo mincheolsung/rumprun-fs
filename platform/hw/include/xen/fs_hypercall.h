@@ -4,15 +4,15 @@
 #include <mini-os/hypervisor.h>
 
 #ifndef __HYPERVISOR_syscall_service_op
-# define __HYPERVISOR_syscall_service_op	42
+# define __HYPERVISOR_syscall_service_op	46
 #endif
 
 #ifndef __HYPERVISOR_syscall_port_bind
-# define __HYPERVISOR_syscall_port_bind		43
+# define __HYPERVISOR_syscall_port_bind		47
 #endif
 
 #ifndef DOMID_BACKEND
-# define DOMID_BACKEND	xen_mk_uint(0x7777)
+# define DOMID_BACKEND	xen_mk_uint(0x7FFA)
 #endif
 
 static inline int

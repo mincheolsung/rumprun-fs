@@ -26,6 +26,7 @@
 #ifndef _BMK_CORE_PGALLOC_H_
 #define _BMK_CORE_PGALLOC_H_
 
+unsigned long * bmk_mem_range(void);
 void		bmk_pgalloc_loadmem(unsigned long, unsigned long);
 
 void *		bmk_pgalloc(int);
