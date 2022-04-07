@@ -22,21 +22,19 @@ void rumpuser_fsdom_init(void)
 int rumpuser_fsdom_open(struct lwp *l, const void *uap, register_t *retval)
 {
 #ifdef FSDOM_FRONTEND
-        /* {
-                syscallarg(const char *) path;
-                syscallarg(int)          flags;
-                syscallarg(int)          mode;
-        } */
         int ret;
         syscall_args_t args;
-        bmk_memset(&args, 0, sizeof(args));
-        args.arg[0] = (uint64_t)SCARG((struct sys_open_args *)uap, path);
-        args.arg[1] = (uint64_t)SCARG((struct sys_open_args *)uap, flags);
-        args.arg[2] = (uint64_t)SCARG((struct sys_open_args *)uap, mode);
+	args.uap = (void *)uap;
         args.call_id = OPEN;
 
-        ret = frontend_syscall(&args, retval);
-        bmk_printf("ret: %d, retval: %ld\n", ret, *retval);
+	bmk_printf("rump_fsdom_open1 path: %s, flags: %d, mode: %d, ret: %d, retval: %lu\n",
+				SCARG((struct sys_open_args *)uap, path),
+				SCARG((struct sys_open_args *)uap, flags),
+				SCARG((struct sys_open_args *)uap, mode),
+                                ret, *retval);
+
+        ret = frontend_send(&args, retval);
+        bmk_printf("rump_fsdom_open2 ret: %d, retval: %ld\n", ret, *retval);
 
         return ret;
 #else
@@ -47,20 +45,22 @@ int rumpuser_fsdom_open(struct lwp *l, const void *uap, register_t *retval)
 int rumpuser_fsdom_read(struct lwp *l, const void *uap, register_t *retval)
 {
 #ifdef FSDOM_FRONTEND
-        /* {
-                syscallarg(int)          fd;
-                syscallarg(void *)       buf;
-                syscallarg(size_t)       nbyte;
-        } */
-
+        int ret;
         syscall_args_t args;
-        bmk_memset(&args, 0, sizeof(args));
-        args.arg[0] = (uint64_t)SCARG((struct sys_read_args *)uap, fd);
-        args.arg[1] = (uint64_t)SCARG((struct sys_read_args *)uap, buf);
-        args.arg[2] = (uint64_t)SCARG((struct sys_read_args *)uap, nbyte);
+	args.uap = (void *)uap;
         args.call_id = READ;
 
-        return frontend_syscall(&args, retval);
+	bmk_printf("rump_fsdom_read1 fd: %d, buf: %s, nbyte: %ld, ret: %d, retval: %lu\n",
+				SCARG((struct sys_read_args *)uap, fd),
+				(char *)SCARG((struct sys_read_args *)uap, buf),
+				SCARG((struct sys_read_args *)uap, nbyte),
+                                ret, *retval);
+
+
+        ret = frontend_send(&args, retval);
+        bmk_printf("rump_fsdom_read2 ret: %d, retval: %ld\n", ret, *retval);
+
+	return ret;
 #else
 	return 0;
 #endif
@@ -69,20 +69,11 @@ int rumpuser_fsdom_read(struct lwp *l, const void *uap, register_t *retval)
 int rumpuser_fsdom_write(struct lwp *l, const void *uap, register_t *retval)
 {
 #ifdef FSDOM_FRONTEND
-        /* {
-                syscallarg(int)          fd;
-                syscallarg(void *)       buf;
-                syscallarg(size_t)       nbyte;
-        } */
-
         syscall_args_t args;
-        bmk_memset(&args, 0, sizeof(args));
-        args.arg[0] = (uint64_t)SCARG((struct sys_write_args *)uap, fd);
-        args.arg[1] = (uint64_t)SCARG((struct sys_write_args *)uap, buf);
-        args.arg[2] = (uint64_t)SCARG((struct sys_write_args *)uap, nbyte);
-        args.call_id = WRITE;
+        args.uap = (void *)uap;
+	args.call_id = WRITE;
 
-        return frontend_syscall(&args, retval);
+        return frontend_send(&args, retval);
 #else
 	return 0;
 #endif
@@ -91,20 +82,11 @@ int rumpuser_fsdom_write(struct lwp *l, const void *uap, register_t *retval)
 int rumpuser_fsdom_fcntl(struct lwp *l, const void *uap, register_t *retval)
 {
 #ifdef FSDOM_FRONTEND
-        /* {
-                syscallarg(int)         fd;
-                syscallarg(int)         cmd;
-                syscallarg(void *)      arg;
-        } */
-
         syscall_args_t args;
-        bmk_memset(&args, 0, sizeof(args));
-        args.arg[0] = (uint64_t)SCARG((struct sys_fcntl_args *)uap, fd);
-        args.arg[1] = (uint64_t)SCARG((struct sys_fcntl_args *)uap, cmd);
-        args.arg[2] = (uint64_t)SCARG((struct sys_fcntl_args *)uap, arg);
-        args.call_id = FCNTL;
+        args.uap = (void *)uap;
+	args.call_id = FCNTL;
 
-        return frontend_syscall(&args, retval);
+        return frontend_send(&args, retval);
 #else
 	return 0;
 #endif
@@ -113,12 +95,8 @@ int rumpuser_fsdom_fcntl(struct lwp *l, const void *uap, register_t *retval)
 int rumpuser_fsdom_close(struct lwp *l, const void* uap, register_t *retval)
 {
 #ifdef FSDOM_FRONTEND
-        /* {
-                syscallarg(int) fd;
-        } */
-
-        //bmk_printf("rumpuser_fsdom_close\n");
-        return rump_fsdom_close(l, uap, retval);
+        //return frontend_send((void *)uap, retval);
+        return 0;
 #else
 	return 0;
 #endif

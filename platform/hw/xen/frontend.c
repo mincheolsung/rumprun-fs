@@ -42,7 +42,7 @@
 #include <bmk-rumpuser/core_types.h>
 #include <bmk-rumpuser/rumpuser.h>
 
-//#include "../librumpfs_myfs/myfs.h"
+#include "../librumpfs_myfs/myfs.h"
 
 #include <xen/fs.h>
 #include <xen/fs_ring.h>
@@ -61,6 +61,12 @@ static void *frontend_buf = NULL;
 
 static frontend_grefs_t *frontend_grefs;
 
+static struct bmk_thread *frontend_sender_thread;
+static struct bmk_thread *frontend_receiver_thread;
+
+static struct rumpuser_mtx *frontend_mtx;
+static struct rumpuser_cv *frontend_cv;
+
 //static _Atomic(int) frontend_terminating = ATOMIC_VAR_INIT(0);
 
 static void frontend_hello_handler(evtchn_port_t port, struct pt_regs *regs,
@@ -69,10 +75,160 @@ static void frontend_hello_handler(evtchn_port_t port, struct pt_regs *regs,
 	/* XXX Does nothing for now */
 }
 
-static void frontend_interrupt_handler(evtchn_port_t port,
-		struct pt_regs *regs, void *data)
+static void frontend_receiver_handler(evtchn_port_t port,
+                struct pt_regs *regs, void *data)
 {
-	bmk_printf("frontend_interrupt_handler\n");
+        if (atomic_exchange(&frontend_rsp_aring->readers, 1) == 0) {
+                bmk_sched_wake(frontend_receiver_thread);
+        }
+}
+
+static void
+receiver_callback(struct bmk_thread *prev, struct bmk_block_data *_block)
+{
+        long old = -1;
+        if (!atomic_compare_exchange_strong(&frontend_rsp_aring->readers, &old, 0)) {
+                bmk_sched_wake(frontend_receiver_thread);
+        }
+}
+
+static struct bmk_block_data receiver_data = { .callback = receiver_callback };
+
+static void frontend_receiver(void *arg)
+{
+        size_t idx, fails;
+	syscall_args_t *slot;
+
+        /* Give us a rump kernel context */
+        rumpuser__hyp.hyp_schedule();
+        rumpuser__hyp.hyp_lwproc_newlwp(0);
+        rumpuser__hyp.hyp_unschedule();
+
+        atomic_store(&frontend_rsp_aring->readers, 1);
+start_over:
+        fails = 0;
+again:
+        while ((idx = lfring_dequeue((struct lfring *) frontend_rsp_aring->ring,
+                        FSDOM_RING_ORDER, false)) != LFRING_EMPTY) {
+retry:
+                fails = 0;
+		slot = (syscall_args_t *)(frontend_buf + idx * FSDOM_DATA_SIZE);
+
+                rumpuser__hyp.hyp_schedule();
+                rump_fsdom_receive(slot, 1);
+                rumpuser__hyp.hyp_unschedule();
+
+                lfring_enqueue((struct lfring *) frontend_fring->ring,
+                        FSDOM_RING_ORDER, idx, false);
+
+                if (atomic_load(&frontend_fring->readers) <= 0) {
+                        //minios_notify_remote_via_evtchn(backend_sender_port);
+                }
+        }
+
+        if (++fails < 1024) {
+                bmk_sched_yield();
+                goto again;
+        }
+
+        /* Shut down the thread */
+        atomic_store(&frontend_rsp_aring->readers, -1);
+
+        idx = lfring_dequeue((struct lfring *) frontend_rsp_aring->ring,
+                        FSDOM_RING_ORDER, false);
+        if (idx != LFRING_EMPTY) {
+                atomic_store(&frontend_rsp_aring->readers, 1);
+                goto retry;
+        }
+
+        bmk_sched_blockprepare();
+        bmk_sched_block(&receiver_data);
+
+        goto start_over;
+}
+
+static void frontend_sender_handler(evtchn_port_t port,
+                struct pt_regs *regs, void *data)
+{
+        if (atomic_exchange(&frontend_fring->readers, 1) == 0) {
+		bmk_printf("frontend_sender_handler\n");
+                bmk_sched_wake(frontend_sender_thread);
+        }
+}
+
+static void
+sender_callback(struct bmk_thread *prev, struct bmk_block_data *_block)
+{
+	long old = -1;
+	if (!atomic_compare_exchange_strong(&frontend_fring->readers, &old, 0)) {
+		bmk_printf("sender_callback\n");
+		bmk_sched_wake(frontend_sender_thread);
+	}
+}
+
+static struct bmk_block_data sender_data = { .callback = sender_callback };
+
+int frontend_send(void *args, long int *retval)
+{
+	size_t idx;
+	int ret;
+	int nlocks;
+	size_t fails = 0;
+	syscall_args_t *slot;
+
+	rumpkern_unsched(&nlocks, NULL);
+	if (!frontend_fring)
+	{
+		bmk_printf("Caller's fring is null\n");
+		ret = -1;
+		goto out;
+	}
+
+	while ((idx = lfring_dequeue((struct lfring *) frontend_fring->ring,
+                                FSDOM_RING_ORDER, false)) == LFRING_EMPTY) {
+        	if (++fails < 512) {
+                	bmk_sched_yield();
+                        continue;
+                }
+                frontend_sender_thread = bmk_current;
+                atomic_store(&frontend_fring->readers, -1);
+
+                /* Check ring buffer one more time here */
+                idx = lfring_dequeue((struct lfring *) frontend_fring->ring,
+                                FSDOM_RING_ORDER, false);
+               	if (idx != LFRING_EMPTY) {
+                      	atomic_store(&frontend_fring->readers, 1);
+                        break;
+                }
+
+		bmk_printf("goto sleep1\n");
+                bmk_sched_blockprepare();
+                bmk_sched_block(&sender_data);
+	}
+
+	slot = (syscall_args_t *)(frontend_buf + idx * FSDOM_DATA_SIZE);
+	*slot = *(syscall_args_t *)args;
+
+	lfring_enqueue((struct lfring *) frontend_req_aring->ring,
+                                FSDOM_RING_ORDER, idx, false);
+
+	/* Wake up the other side. */
+        if (atomic_load(&frontend_req_aring->readers) <= 0) {
+                minios_notify_remote_via_evtchn(app_dom_info.port);
+        }
+
+	bmk_printf("goto sleep2\n");
+	rumpuser_mutex_enter_nowrap(frontend_mtx);
+        rumpuser_cv_wait_nowrap(frontend_cv, frontend_mtx);
+        rumpuser_mutex_exit(frontend_mtx);
+
+	//*retval = *(long int *)buf;
+	//ret = *(int *)(buf + sizeof(long int));
+
+	ret = 0;
+out:
+	rumpkern_sched(nlocks, NULL);
+	return ret;
 }
 
 static void frontend_grant_range(frontend_grefs_t **pgrefs, uint32_t *result)
@@ -137,6 +293,8 @@ static void frontend_init_ring(void)
 	if (!frontend_fring)
 		bmk_platform_halt("shared pages are not allocated\n");
 
+	bmk_printf("fring: %lx\n", (uint64_t)frontend_fring);
+
 	__asm__ __volatile__("" ::: "memory");
 
 	frontend_grefs->fring_addr = (uint64_t)frontend_fring;
@@ -155,76 +313,11 @@ static void frontend_init_ring(void)
 	atomic_init(&frontend_rsp_aring->readers, 0);
 	atomic_signal_fence(memory_order_seq_cst);
 }
-
-struct block_caller {
-	struct bmk_block_data header;
-	size_t *idx;
-};
-
-static void
-caller_callback(struct bmk_thread *prev, struct bmk_block_data *_block)
-{
-	struct block_caller *bc = (struct block_caller *)_block;
-
-	bmk_printf("caller_callback, idx: %lu\n", *bc->idx);
-
-	lfring_enqueue((struct lfring *) frontend_req_aring->ring,
-			FSDOM_RING_ORDER, *bc->idx, false);
-
-	/* Wake up the other side. */
-	if (atomic_load(&frontend_req_aring->readers) <= 0)
-		minios_notify_remote_via_evtchn(app_dom_info.port);
-}
-
-int frontend_syscall(syscall_args_t *syscall_args, long int *retval)
-{
-	size_t idx;
-	void *buf;
-	int ret;
-
-	struct block_caller bc;
-	bc.header.callback = caller_callback;
-	bc.idx = &idx;
-
-	if (!frontend_fring)
-	{
-		bmk_printf("Caller's fring is null\n");
-		return -1;
-	}
-
-	syscall_args->thread = bmk_current;
-
-	bmk_printf("args: (%lu, %lu, %lu, %lu, %lu, %lu, %lx, %lu), retval: %ld\n", \
-		  syscall_args->arg[0], syscall_args->arg[1], \
-		  syscall_args->arg[2], syscall_args->arg[3], \
-		  syscall_args->arg[4], syscall_args->arg[5], \
-	(uint64_t)syscall_args->thread, syscall_args->call_id, *retval);
-
-	idx = lfring_dequeue((struct lfring *) frontend_fring->ring,
-		FSDOM_RING_ORDER, false);
-	if (idx == LFRING_EMPTY)
-		return -1;
-
-	buf = frontend_buf + idx * FSDOM_DATA_SIZE;
-	bmk_memcpy(buf, syscall_args, sizeof(syscall_args_t));
-
-	bmk_sched_blockprepare();
-	bmk_sched_block(&bc.header);
-
-	*retval = *(long int *)buf;
-	ret = *(int *)(buf + sizeof(long int));
-
-  	lfring_enqueue((struct lfring *)frontend_fring->ring,
-			         	FSDOM_RING_ORDER, idx, false);
-
-	bmk_printf("Caller wakes up, ret: %d, retval: %ld\n", ret, *retval);
-	return ret;
-}
-
 void frontend_init(void)
 {
 	int err = 0;
 	evtchn_port_t old_hello_port;
+	evtchn_port_t frontend_sender_port;
 
 	bmk_printf("Initializing fsdom-frontend...\n");
 	err = HYPERVISOR_syscall_service_op(RUMPRUN_SERVICE_QUERY, SYSID_FS,
@@ -249,10 +342,18 @@ void frontend_init(void)
 
 	/* create an main event channel with port*/
 	err = minios_evtchn_alloc_unbound(fs_dom_info.domid,
-			frontend_interrupt_handler, NULL, &app_dom_info.port);
+			frontend_receiver_handler, NULL, &app_dom_info.port);
 	if (err) {
 		bmk_platform_halt("main event channel alloc fails");
 	}
+
+	/* port for frontend_send */
+        err = minios_evtchn_alloc_unbound(fs_dom_info.domid,
+                    frontend_sender_handler, NULL, &frontend_sender_port);
+        if (err) {
+		bmk_platform_halt("frontend_sender_port alloc fails");
+        }
+        frontend_grefs->frontend_sender_port = frontend_sender_port;
 
 	old_hello_port = app_dom_info.hello_port;
 
@@ -263,6 +364,9 @@ void frontend_init(void)
 	}
 
 	app_dom_info.status = RUMPRUN_FRONTEND_ACTIVE;
+
+	frontend_receiver_thread = bmk_sched_create("frontend_receiver",
+                NULL, 1, -1, frontend_receiver, NULL, NULL, 0);
 
 	/* register frontend */
 	err = HYPERVISOR_syscall_service_op(RUMPRUN_SERVICE_REGISTER_APP, SYSID_FS,
@@ -279,4 +383,7 @@ void frontend_init(void)
 
 	minios_unmask_evtchn(app_dom_info.port);
 	minios_unmask_evtchn(app_dom_info.hello_port);
+
+	rumpuser_mutex_init(&frontend_mtx, RUMPUSER_MTX_SPIN);
+        rumpuser_cv_init(&frontend_cv);
 }

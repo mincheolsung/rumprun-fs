@@ -15,12 +15,6 @@
 typedef uint32_t evtchn_port_t;
 typedef uint32_t grant_ref_t;
 
-typedef struct syscall_args {
-	uint64_t arg[6];
-	struct bmk_thread *thread;
-	uint64_t call_id;
-} syscall_args_t;
-
 typedef struct frontend_grefs {
 	uint64_t base;
 	uint64_t len;
@@ -30,9 +24,9 @@ typedef struct frontend_grefs {
         grant_ref_t range_grefs[0];
 } frontend_grefs_t;
 
-int frontend_syscall(syscall_args_t *args, long int *retval);
+int frontend_send(void *, long int *);
 void frontend_init(void);
 void backend_init(void);
-void backend_connect(evtchn_port_t port);
+void backend_connect(evtchn_port_t);
 
 #endif

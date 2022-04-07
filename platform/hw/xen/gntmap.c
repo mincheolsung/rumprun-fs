@@ -44,7 +44,7 @@
 #include <bmk-core/printf.h>
 #include <bmk-core/platform.h>
 
-#define DEFAULT_MAX_GRANTS 4096
+#define DEFAULT_MAX_GRANTS 163840 /* NR_GRANT_ENTRIES in gnttab.c */
 
 struct gntmap_entry {
     unsigned long host_addr;

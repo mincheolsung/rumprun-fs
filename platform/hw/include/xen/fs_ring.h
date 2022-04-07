@@ -5,12 +5,10 @@
 #include <bmk-core/lfring.h>
 #include <bmk-pcpu/pcpu.h>
 
-//#define SHARED_PAGES 63231
-
 #define FSDOM_RING_ORDER	9
 #define FSDOM_RING_SIZE	(1U << FSDOM_RING_ORDER)
 
-#define FSDOM_DATA_SIZE	1024
+#define FSDOM_DATA_SIZE	32
 #define FSDOM_RING_DATA_PAGES	((FSDOM_DATA_SIZE * FSDOM_RING_SIZE +	\
 			BMK_PCPU_PAGE_SIZE - 1) / BMK_PCPU_PAGE_SIZE)
 

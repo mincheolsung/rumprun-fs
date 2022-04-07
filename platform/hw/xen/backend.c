@@ -113,7 +113,6 @@ static void backend_welcome_handler(evtchn_port_t port, struct pt_regs *regs,
 	backend_connect(port);
 }
 
-
 struct receiver_block_data {
 	struct bmk_block_data header;
 	unsigned int dom;
@@ -137,22 +136,15 @@ static void backend_receiver(void *arg)
 	struct receiver_block_data block_data;
 	unsigned int dom = bt->dom;
 	size_t idx, fails;
-	syscall_args_t *syscall_args = NULL;
-	void *buf;
-	long int retval;
-	int error = 0;
-	uint64_t offset;
-	//struct lfring **_frontend_runq;
-	//struct bmk_thread *_frontend_thread;
+	syscall_args_t *slot;
 
 	block_data.header.callback = receiver_callback;
 	block_data.dom = dom;
-	offset = (uint64_t)frontend_mem[dom] - frontend_base[dom];
 
 	/* Give us a rump kernel context */
-	//rumpuser__hyp.hyp_schedule();
-	//rumpuser__hyp.hyp_lwproc_newlwp(0);
-	//rumpuser__hyp.hyp_unschedule();
+	rumpuser__hyp.hyp_schedule();
+	rumpuser__hyp.hyp_lwproc_newlwp(0);
+	rumpuser__hyp.hyp_unschedule();
 
 	atomic_store(&backend_req_aring[dom]->readers, 1);
 start_over:
@@ -162,88 +154,11 @@ again:
 			FSDOM_RING_ORDER, false)) != LFRING_EMPTY) {
 retry:
 		fails = 0;
-		buf = backend_buf[dom] + idx * FSDOM_DATA_SIZE;
-		syscall_args = (syscall_args_t *)buf;
-
-		rumpuser__hyp.hyp_schedule();
-
-		/* XXX do system call here? */
-		bmk_printf("args: (%lu, %lu, %lu, %lu, %lu, %lu, %lx, %lu)\n", \
-				syscall_args->arg[0], syscall_args->arg[1], syscall_args->arg[2], syscall_args->arg[3], \
-				syscall_args->arg[4], syscall_args->arg[5], (uint64_t)syscall_args->thread, syscall_args->call_id);
-
-		switch (syscall_args->call_id) {
-			case OPEN:
-			{
-				char *path;
-				uint64_t flags;
-				uint64_t mode;
-
-				path = (char *)syscall_args->arg[0] + offset;
-				flags = syscall_args->arg[1];
-				mode  = syscall_args->arg[2];
-				bmk_printf("(OPEN) path: %s, flags: %lu, mode: %lu\n", path, flags, mode);
-				error = rump_fsdom_open(path, flags, mode, &retval);
-				bmk_printf("rump_fsdom_open returns, error: %d, retval: %d\n", error, (int)retval);
-				break;
-			}
-
-			case READ:
-			{
-				uint64_t fd;
-				void *buffer;
-				uint64_t nbyte;
-
-				fd = syscall_args->arg[0];
-				buffer = (void *)syscall_args->arg[1] + offset;
-				nbyte  = syscall_args->arg[2];
-				bmk_printf("(READ) fd: %d, nbyte: %lu\n", (int)fd, nbyte);
-				error = rump_fsdom_read(fd, buffer, nbyte, &retval);
-				bmk_printf("rump_fsdom_read returns, error: %d, retval: %d\n", error, (int)retval);
-
-				break;
-			}
-			case WRITE:
-			{
-				// char *data;
-				//data = (char *)(syscall_args->arg[1] + offset);
-				//bmk_printf("data: %s\n", data);
-
-				break;
-			}
-
-			case CLOSE:
-				break;
-
-			case FCNTL:
-			{
-				uint64_t fd;
-				uint64_t cmd;
-				void *arg;
-
-				fd = syscall_args->arg[0];
-				cmd  = syscall_args->arg[1];
-				arg = (void *)syscall_args->arg[2] + offset;
-				bmk_printf("(FCNTL) fd: %d, cmd: %d\n", (int)fd, (int)cmd);
-				error = rump_fsdom_fcntl(fd, cmd, arg, &retval);
-				bmk_printf("rump_fsdom_fcntl returns, error: %d, retval: %d\n", error, (int)retval);
-
-				break;
-			}
-
-			default:
-				bmk_printf("Wrong file operation\n");
-				error = 19;
-				break;
-		}
-
-		//bmk_memcpy(&syscall_args->arg[0], &retval, sizeof(uint64_t));
-		syscall_args->arg[0] = retval;
-		syscall_args->arg[1] = error;
-		rumpuser__hyp.hyp_unschedule();
+		slot = (syscall_args_t *)(backend_buf[dom] + idx * FSDOM_DATA_SIZE);
+		rump_fsdom_enqueue(&slot->wk);
 	}
 
-	if (++fails < 256) {
+	if (++fails < 1024) {
 		bmk_sched_yield();
 		goto again;
 	}
@@ -255,14 +170,6 @@ retry:
 
 	if (idx != LFRING_EMPTY)
 		goto retry;
-
-	if (syscall_args != NULL)
-	{
-		/* Wake up the frontend */
-		//_frontend_runq = (struct lfring **)(frontend_runq[dom] + offset);
-		//_frontend_thread = (struct bmk_thread *)((uint64_t)syscall_args->thread + offset);
-		//bmk_sched_wake_runq(_frontend_runq, offset, _frontend_thread);
-	}
 
 	bmk_sched_blockprepare();
 	bmk_sched_block(&block_data.header);
@@ -304,6 +211,9 @@ void backend_init(void)
 	if (err) {
 		bmk_platform_halt("HYP register fails\n");
 	}
+
+	/* create workqueue */
+	rump_fsdom_init_workqueue();
 }
 
 void backend_connect(evtchn_port_t port)
@@ -311,10 +221,11 @@ void backend_connect(evtchn_port_t port)
 	unsigned int dom;
 	int err = 0;
 	int ret = 1;
-	frontend_grefs_t *frontend_grefs;
 	uint32_t domids[1];
 	uint64_t fring_offset;
 	uint32_t grefs_required;
+	frontend_grefs_t *frontend_grefs = NULL;
+
 	/*
 	 * frontend_dom is an internal domid only used in this fs driver.
 	 * Note that domid in Xenstore is NOT related to the frontend_dom.
@@ -340,16 +251,16 @@ void backend_connect(evtchn_port_t port)
 	/* first, retrieve grefs of the shared pages */
 	frontend_grefs = gntmap_map_grant_refs(&backend_map[dom],
 		grefs_required, domids, 0, app_dom_info[dom].grefs + 1, 1);
-
-	int i;
-	for (i = 1; i < grefs_required + 1; i++) {
-		bmk_printf("grefs[%u]: %d\n", i, app_dom_info[dom].grefs[i]);
+	if (frontend_grefs == NULL) {
+		bmk_platform_halt("Failed to map grefs\n");
 	}
 
 	/* map frontend's entire memory space */
 	frontend_mem[dom] = gntmap_map_grant_refs(&backend_map[dom],
 		frontend_grefs->len, domids, 0, frontend_grefs->range_grefs, 1);
-
+	if (frontend_mem[dom] == NULL) {
+		bmk_platform_halt("Failed to map frontend's memory\n");
+	}
 	__asm__ __volatile__("" ::: "memory");
 
 	fring_offset = frontend_grefs->fring_addr - frontend_grefs->base;
@@ -358,9 +269,15 @@ void backend_connect(evtchn_port_t port)
 	backend_rsp_aring[dom] = FSDOM_RSP_ARING(backend_fring[dom]);
 	backend_buf[dom] = FSDOM_BUF(backend_fring[dom]);
 
+	__asm__ __volatile__("" ::: "memory");
+
 	frontend_base[dom] = frontend_grefs->base;
 
 	gntmap_munmap(&backend_map[dom], (uint64_t) frontend_grefs, grefs_required);
+
+	bmk_printf("offset: %lx\n", (uint64_t)frontend_mem[dom] - frontend_base[dom]);
+	bmk_printf("size of syscall_args_t: %ld\n", sizeof(syscall_args_t));
+	rump_fsdom_set_offset((uint64_t)frontend_mem[dom] - frontend_base[dom]);
 
 	/* create a receiver thread */
 	backend_threads[dom].dom = dom;
