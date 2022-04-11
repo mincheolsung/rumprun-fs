@@ -64,6 +64,11 @@ static void *backend_buf[RUMPRUN_NUM_OF_APPS];
 static uint64_t frontend_base[RUMPRUN_NUM_OF_APPS];
 static void *frontend_mem[RUMPRUN_NUM_OF_APPS];
 
+static evtchn_port_t frontend_sender_port[RUMPRUN_NUM_OF_APPS];
+static evtchn_port_t backend_sender_port[RUMPRUN_NUM_OF_APPS];
+
+static struct bmk_thread *backend_sender_thread;
+
 /* receiver thread */
 struct backend_thread {
 	_Alignas(LF_CACHE_BYTES) struct bmk_thread * thread;
@@ -155,7 +160,15 @@ again:
 retry:
 		fails = 0;
 		slot = (syscall_args_t *)(backend_buf[dom] + idx * FSDOM_DATA_SIZE);
+		//bmk_printf("backend_receiver: slot: %p, slot->argp: %p, args->thread: %p\n", slot, slot->argp, slot->thread);
 		rump_fsdom_enqueue(&slot->wk);
+
+		lfring_enqueue((struct lfring *) backend_fring[dom]->ring,
+                        FSDOM_RING_ORDER, idx, false);
+
+		if (atomic_load(&backend_fring[dom]->readers) <= 0) {
+                        minios_notify_remote_via_evtchn(frontend_sender_port[dom]);
+                }
 	}
 
 	if (++fails < 1024) {
@@ -175,6 +188,83 @@ retry:
 	bmk_sched_block(&block_data.header);
 
 	goto start_over;
+}
+
+static void frontend_sender_handler(evtchn_port_t port, struct pt_regs *regs,
+                void *data) {}
+
+static void backend_sender_handler(evtchn_port_t port, struct pt_regs *regs,
+                void *data)
+{
+        int dom = 0;
+        if (atomic_exchange(&backend_fring[dom]->readers, 1) == 0) {
+                bmk_sched_wake(backend_sender_thread);
+        }
+}
+
+static void
+sender_callback(struct bmk_thread *prev, struct bmk_block_data *_block)
+{
+        int dom = 0;
+        long old = -1;
+        if (!atomic_compare_exchange_strong(&backend_fring[dom]->readers, &old, 0)) {
+                bmk_sched_wake(backend_sender_thread);
+        }
+}
+static struct bmk_block_data sender_data = { .callback = sender_callback };
+
+void backend_send(void *args)
+{
+        size_t idx;
+        int dom = 0;
+        int nlocks;
+        size_t fails = 0;
+	syscall_args_t *slot;
+	syscall_args_t *syscall_args = (syscall_args_t *)args;
+
+        rumpkern_unsched(&nlocks, NULL);
+
+	if (!backend_fring[dom]) {
+		bmk_printf("backend fring not yet set\n");
+               	goto out;
+	}
+
+        while ((idx = lfring_dequeue((struct lfring *) backend_fring[dom]->ring,
+                                FSDOM_RING_ORDER, false)) == LFRING_EMPTY) {
+                if (++fails < 512) {
+                        bmk_sched_yield();
+                        continue;
+                }
+                backend_sender_thread = bmk_current;
+                atomic_store(&backend_fring[dom]->readers, -1);
+
+                /* Check ring buffer one more time here */
+                idx = lfring_dequeue((struct lfring *) backend_fring[dom]->ring,
+                                FSDOM_RING_ORDER, false);
+                if (idx != LFRING_EMPTY) {
+                        atomic_store(&backend_fring[dom]->readers, 1);
+                        break;
+                }
+                bmk_sched_blockprepare();
+                bmk_sched_block(&sender_data);
+        }
+
+        slot = (syscall_args_t *)(backend_buf[dom] + idx * FSDOM_DATA_SIZE);
+	slot->argp = syscall_args->argp;
+	//slot->thread = syscall_args->thread;
+	slot->ret = syscall_args->ret;
+	slot->retval = syscall_args->retval;
+
+        lfring_enqueue((struct lfring *) backend_rsp_aring[dom]->ring,
+                FSDOM_RING_ORDER, idx, false);
+
+        /* Wake up the frontend_receiver */
+        if (atomic_load(&backend_rsp_aring[dom]->readers) <= 0) {
+                minios_notify_remote_via_evtchn(fs_dom_info.port[dom]);
+        }
+
+out:
+        rumpkern_sched(nlocks, NULL);
 }
 
 
@@ -226,6 +316,9 @@ void backend_connect(evtchn_port_t port)
 	uint32_t grefs_required;
 	frontend_grefs_t *frontend_grefs = NULL;
 
+	evtchn_port_t _frontend_sender_port;
+        evtchn_port_t _backend_sender_port;
+
 	/*
 	 * frontend_dom is an internal domid only used in this fs driver.
 	 * Note that domid in Xenstore is NOT related to the frontend_dom.
@@ -272,8 +365,10 @@ void backend_connect(evtchn_port_t port)
 	__asm__ __volatile__("" ::: "memory");
 
 	frontend_base[dom] = frontend_grefs->base;
+	_frontend_sender_port = frontend_grefs->frontend_sender_port;
+        _backend_sender_port = frontend_grefs->backend_sender_port;
 
-	gntmap_munmap(&backend_map[dom], (uint64_t) frontend_grefs, grefs_required);
+	gntmap_munmap(&backend_map[dom], (uint64_t)frontend_grefs, grefs_required);
 
 	bmk_printf("offset: %lx\n", (uint64_t)frontend_mem[dom] - frontend_base[dom]);
 	bmk_printf("size of syscall_args_t: %ld\n", sizeof(syscall_args_t));
@@ -298,6 +393,24 @@ void backend_connect(evtchn_port_t port)
 	}
 
 	minios_unmask_evtchn(fs_dom_info.port[dom]);
+
+	/* bind senders' ports */
+	err = minios_evtchn_bind_interdomain(app_dom_info[dom].domid,
+                _frontend_sender_port, frontend_sender_handler, NULL,
+                &frontend_sender_port[dom]);
+        if (err) {
+                bmk_platform_halt("Bind frontend sender port fails\n");
+        }
+
+        minios_unmask_evtchn(frontend_sender_port[dom]);
+
+        err = minios_evtchn_bind_interdomain(app_dom_info[dom].domid,
+                _backend_sender_port, backend_sender_handler, NULL,
+                &backend_sender_port[dom]);
+        if (err) {
+                bmk_platform_halt("Bind backend sender port fails\n");
+        }
+        minios_unmask_evtchn(backend_sender_port[dom]);
 
 	/* assign new welcome port */
 	err = minios_evtchn_alloc_unbound(DOMID_BACKEND,

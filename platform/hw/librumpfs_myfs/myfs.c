@@ -6,6 +6,8 @@
 #include <xen/fs.h>
 #include "myfs.h"
 
+//#define DEBUG
+
 static uint64_t rump_offset;
 static struct workqueue *rump_fsdom_workqueue;
 filedesc_t *fdesc;
@@ -18,25 +20,7 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 
 	args = (syscall_args_t *)wk;
 
-	KASSERT((uint64_t)&args->wk == (uint64_t)wk);
-
-	aprint_normal("rump_fsdom_work offset: %lx\n", rump_offset);
-
 	switch (args->call_id) {
-	/*
-		case GETFILE:
-		{
-        		aprint_normal("rump_fd_getfile(%u)\n", fd);
-        		file_t *fp;
-			fp = fd_getfile(fd);
-			if (fp == NULL) {
-				ret = -1;
-			} else {
-				ret = 0;
-			}
-			break;
-		}
-	*/
 		case OPEN:
 		{
 			struct sys_open_args syscall_args;
@@ -47,12 +31,13 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
      			SCARG(&syscall_args, mode) = SCARG(uap, mode);
 
 			ret = sys_open(curlwp, (const struct sys_open_args *)&syscall_args, &retval);
-
-			aprint_normal("rump_fsdom_open path: %s, flags: %d, mode: %d, ret: %d, retval: %lu\n",
+#ifdef DEBUG
+			aprint_normal("OPEN path: %s, flags: %d, mode: %d, ret: %d, retval: %lu\n",
 				SCARG(&syscall_args, path),
 				SCARG(&syscall_args, flags),
 				SCARG(&syscall_args, mode),
 				ret, retval);
+#endif
 			break;
 		}
 
@@ -64,34 +49,67 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 		        SCARG(&syscall_args, buf) = (void *)((uint64_t)SCARG(uap, buf) + rump_offset);
      			SCARG(&syscall_args, nbyte) = SCARG(uap, nbyte);
 
-			aprint_normal("rump_fsdom_read fd: %d, buf: %s, nbyte: %ld, ret: %d, retval: %lu\n",
-                                SCARG(&syscall_args, fd),
-                                (char *)SCARG(&syscall_args, buf),
-                                SCARG(&syscall_args, nbyte),
-                                ret, retval);
-
 			ret = sys_read(curlwp, (const struct sys_read_args *)&syscall_args, &retval);
+#ifdef DEBUG
+			aprint_normal("READ fd: %d, nbyte: %ld, ret: %d, retval: %lu, buf:\n%s\n",
+                                SCARG(&syscall_args, fd),
+                                SCARG(&syscall_args, nbyte),
+                                ret, retval,
+				(char *)SCARG(&syscall_args, buf));
+#endif
 			break;
 		}
 
 		case WRITE:
 		{
-			aprint_normal("rump_fsdom_write\n");
-			//ret = sys_write(curlwp, (const struct sys_write_args *)args->uap, &args->retval);
+			struct sys_write_args syscall_args;
+			struct sys_write_args *uap = (struct sys_write_args *)((uint64_t)args->uap + rump_offset);
+			SCARG(&syscall_args, fd) = SCARG(uap, fd);
+		        SCARG(&syscall_args, buf) = (void *)((uint64_t)SCARG(uap, buf) + rump_offset);
+     			SCARG(&syscall_args, nbyte) = SCARG(uap, nbyte);
+
+			ret = sys_write(curlwp, (const struct sys_write_args *)&syscall_args, &retval);
+#ifdef DEBUG
+			aprint_normal("WRITE fd: %d, nbyte: %ld, ret: %d, retval: %lu, buf:\n%s\n",
+                                SCARG(&syscall_args, fd),
+                                SCARG(&syscall_args, nbyte),
+                                ret, retval,
+				(const char *)SCARG(&syscall_args, buf));
+#endif
 			break;
 		}
 
 		case CLOSE:
 		{
-			aprint_normal("rump_fsdom_close\n");
-			//ret = sys_close(curlwp, (const struct sys_close_args *)args->uap, &args->retval);
+			struct sys_close_args syscall_args;
+                        struct sys_close_args *uap = (struct sys_close_args *)((uint64_t)args->uap + rump_offset);
+                        SCARG(&syscall_args, fd) = SCARG(uap, fd);
+
+                        ret = sys_close(curlwp, (const struct sys_close_args *)&syscall_args, &retval);
+#ifdef DEBUG
+                        aprint_normal("CLOSE fd: %d, ret: %d, retval: %lu\n",
+                                SCARG(&syscall_args, fd),
+                                ret, retval);
+#endif
 			break;
 		}
 
 		case FCNTL:
 		{
-			aprint_normal("rump_fsdom_read\n");
-			//ret = sys_fcntl(curlwp, (const struct sys_fcntl_args *)args->uap, &args->retval);
+			struct sys_fcntl_args syscall_args;
+			struct sys_fcntl_args *uap = (struct sys_fcntl_args *)((uint64_t)args->uap + rump_offset);
+			SCARG(&syscall_args, fd) = SCARG(uap, fd);
+     			SCARG(&syscall_args, cmd) = SCARG(uap, cmd);
+		        SCARG(&syscall_args, arg) = (void *)((uint64_t)SCARG(uap, arg) + rump_offset);
+
+			ret = sys_fcntl(curlwp, (const struct sys_fcntl_args *)&syscall_args, &retval);
+#ifdef DEBUG
+			aprint_normal("FCNTL fd: %d, cmd: %d, arg: %lx, ret: %d, retval: %lu\n",
+                                SCARG(&syscall_args, fd),
+                                SCARG(&syscall_args, cmd),
+                                *(uint64_t *)SCARG(&syscall_args, arg),
+                                ret, retval);
+#endif
 			break;
 		}
 
@@ -101,6 +119,13 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 			ret = -1;
 		}
 	}
+
+	args->ret  = ret;
+	args->retval = retval;
+
+#ifndef FSDOM_FRONTEND
+	rumpuser_fsdom_send(args);
+#endif
 }
 
 void rump_fsdom_init_workqueue(void)
@@ -120,16 +145,4 @@ void rump_fsdom_set_offset(uint64_t offset)
 void rump_fsdom_enqueue(void *wk)
 {
 	workqueue_enqueue(rump_fsdom_workqueue, (struct work *)wk, NULL);
-}
-
-file_t *rump_fd_getfile(unsigned fd)
-{
-        aprint_normal("rump_fd_getfile(%u)\n", fd);
-        return NULL;
-        //return fd_getfile(fd);
-}
-
-void rump_fsdom_receive(void *slot, int args)
-{
-	return;
 }

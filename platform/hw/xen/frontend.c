@@ -64,6 +64,9 @@ static frontend_grefs_t *frontend_grefs;
 static struct bmk_thread *frontend_sender_thread;
 static struct bmk_thread *frontend_receiver_thread;
 
+static evtchn_port_t frontend_sender_port;
+static evtchn_port_t backend_sender_port;
+
 static struct rumpuser_mtx *frontend_mtx;
 static struct rumpuser_cv *frontend_cv;
 
@@ -98,6 +101,7 @@ static void frontend_receiver(void *arg)
 {
         size_t idx, fails;
 	syscall_args_t *slot;
+	syscall_args_t *orig_args;
 
         /* Give us a rump kernel context */
         rumpuser__hyp.hyp_schedule();
@@ -114,15 +118,21 @@ retry:
                 fails = 0;
 		slot = (syscall_args_t *)(frontend_buf + idx * FSDOM_DATA_SIZE);
 
-                rumpuser__hyp.hyp_schedule();
-                rump_fsdom_receive(slot, 1);
-                rumpuser__hyp.hyp_unschedule();
+                //rumpuser__hyp.hyp_schedule();
+                //rump_fsdom_receive(slot, 1);
+		orig_args = (void *)slot->argp;
+		orig_args->ret = slot->ret;
+		orig_args->retval = slot->retval;
+
+		rumpuser_cv_signal(frontend_cv);
+		//bmk_sched_wake(slot->thread);
+                //rumpuser__hyp.hyp_unschedule();
 
                 lfring_enqueue((struct lfring *) frontend_fring->ring,
                         FSDOM_RING_ORDER, idx, false);
 
                 if (atomic_load(&frontend_fring->readers) <= 0) {
-                        //minios_notify_remote_via_evtchn(backend_sender_port);
+                        minios_notify_remote_via_evtchn(backend_sender_port);
                 }
         }
 
@@ -147,6 +157,9 @@ retry:
         goto start_over;
 }
 
+static void backend_sender_handler(evtchn_port_t port,
+                struct pt_regs *regs, void *data) {}
+
 static void frontend_sender_handler(evtchn_port_t port,
                 struct pt_regs *regs, void *data)
 {
@@ -168,6 +181,15 @@ sender_callback(struct bmk_thread *prev, struct bmk_block_data *_block)
 
 static struct bmk_block_data sender_data = { .callback = sender_callback };
 
+/*
+static void
+sender_callback2(struct bmk_thread *prev, struct bmk_block_data *_block)
+{
+	bmk_printf("sender_callback2\n");
+}
+
+static struct bmk_block_data sender_data2 = { .callback = sender_callback2 };
+*/
 int frontend_send(void *args, long int *retval)
 {
 	size_t idx;
@@ -175,6 +197,7 @@ int frontend_send(void *args, long int *retval)
 	int nlocks;
 	size_t fails = 0;
 	syscall_args_t *slot;
+	syscall_args_t *syscall_args = (syscall_args_t *)args;
 
 	rumpkern_unsched(&nlocks, NULL);
 	if (!frontend_fring)
@@ -206,26 +229,30 @@ int frontend_send(void *args, long int *retval)
                 bmk_sched_block(&sender_data);
 	}
 
+	syscall_args->thread = bmk_current;
+
 	slot = (syscall_args_t *)(frontend_buf + idx * FSDOM_DATA_SIZE);
-	*slot = *(syscall_args_t *)args;
+	*slot = *syscall_args;
 
 	lfring_enqueue((struct lfring *) frontend_req_aring->ring,
                                 FSDOM_RING_ORDER, idx, false);
 
-	/* Wake up the other side. */
+	/* Wake up the backend_receiver */
         if (atomic_load(&frontend_req_aring->readers) <= 0) {
                 minios_notify_remote_via_evtchn(app_dom_info.port);
         }
 
-	bmk_printf("goto sleep2\n");
+	//bmk_printf("goto sleep2\n");
 	rumpuser_mutex_enter_nowrap(frontend_mtx);
-        rumpuser_cv_wait_nowrap(frontend_cv, frontend_mtx);
-        rumpuser_mutex_exit(frontend_mtx);
+	rumpuser_cv_wait_nowrap(frontend_cv, frontend_mtx);
+      	rumpuser_mutex_exit(frontend_mtx);
+//	bmk_sched_blockprepare();
+//      bmk_sched_block(&sender_data2);
+//	bmk_printf("11\n");
+//	bmk_printf("ret: %d, retval: %ld\n", slot->ret, slot->retval);
 
-	//*retval = *(long int *)buf;
-	//ret = *(int *)(buf + sizeof(long int));
-
-	ret = 0;
+	ret = slot->ret;
+	*retval = slot->retval;
 out:
 	rumpkern_sched(nlocks, NULL);
 	return ret;
@@ -260,6 +287,7 @@ static void frontend_grant_range(frontend_grefs_t **pgrefs, uint32_t *result)
 	bmk_assert(grefs_required <= GREFS_PAGES - 1);
 
 	bmk_printf("GREFS_PAGES: %lu, grefs_required %u\n", (uint64_t)GREFS_PAGES, grefs_required);
+	bmk_printf("==========================================================\n\n");
 
 	grefs = bmk_pgalloc(gntmap_map2order(GREFS_PAGES));
 	if (!grefs) {
@@ -293,8 +321,6 @@ static void frontend_init_ring(void)
 	if (!frontend_fring)
 		bmk_platform_halt("shared pages are not allocated\n");
 
-	bmk_printf("fring: %lx\n", (uint64_t)frontend_fring);
-
 	__asm__ __volatile__("" ::: "memory");
 
 	frontend_grefs->fring_addr = (uint64_t)frontend_fring;
@@ -317,7 +343,6 @@ void frontend_init(void)
 {
 	int err = 0;
 	evtchn_port_t old_hello_port;
-	evtchn_port_t frontend_sender_port;
 
 	bmk_printf("Initializing fsdom-frontend...\n");
 	err = HYPERVISOR_syscall_service_op(RUMPRUN_SERVICE_QUERY, SYSID_FS,
@@ -354,6 +379,15 @@ void frontend_init(void)
 		bmk_platform_halt("frontend_sender_port alloc fails");
         }
         frontend_grefs->frontend_sender_port = frontend_sender_port;
+
+	/* port for backend_send */
+        err = minios_evtchn_alloc_unbound(fs_dom_info.domid,
+                    backend_sender_handler, NULL, &backend_sender_port);
+        if (err) {
+                bmk_platform_halt("backend_sender_port alloc fails");
+        }
+
+        frontend_grefs->backend_sender_port = backend_sender_port;
 
 	old_hello_port = app_dom_info.hello_port;
 

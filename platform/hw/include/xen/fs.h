@@ -28,5 +28,5 @@ int frontend_send(void *, long int *);
 void frontend_init(void);
 void backend_init(void);
 void backend_connect(evtchn_port_t);
-
+void backend_send(void *);
 #endif
