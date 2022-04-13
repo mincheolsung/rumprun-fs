@@ -67,7 +67,8 @@ static void *frontend_mem[RUMPRUN_NUM_OF_APPS];
 static evtchn_port_t frontend_sender_port[RUMPRUN_NUM_OF_APPS];
 static evtchn_port_t backend_sender_port[RUMPRUN_NUM_OF_APPS];
 
-static struct bmk_thread *backend_sender_thread;
+static struct rumpuser_mtx *backend_mtx[RUMPRUN_NUM_OF_APPS];
+static struct rumpuser_cv *backend_cv[RUMPRUN_NUM_OF_APPS];
 
 /* receiver thread */
 struct backend_thread {
@@ -131,8 +132,9 @@ receiver_callback(struct bmk_thread *prev, struct bmk_block_data *_block)
 	unsigned int dom = block->dom;
 	long old = -1;
 
-	if (!atomic_compare_exchange_strong(&backend_req_aring[dom]->readers, &old, 0))
+	if (!atomic_compare_exchange_strong(&backend_req_aring[dom]->readers, &old, 0)) {
 		bmk_sched_wake(backend_threads[dom].thread);
+	}
 }
 
 static void backend_receiver(void *arg)
@@ -198,20 +200,9 @@ static void backend_sender_handler(evtchn_port_t port, struct pt_regs *regs,
 {
         int dom = 0;
         if (atomic_exchange(&backend_fring[dom]->readers, 1) == 0) {
-                bmk_sched_wake(backend_sender_thread);
+		rumpuser_cv_signal(backend_cv[dom]);
         }
 }
-
-static void
-sender_callback(struct bmk_thread *prev, struct bmk_block_data *_block)
-{
-        int dom = 0;
-        long old = -1;
-        if (!atomic_compare_exchange_strong(&backend_fring[dom]->readers, &old, 0)) {
-                bmk_sched_wake(backend_sender_thread);
-        }
-}
-static struct bmk_block_data sender_data = { .callback = sender_callback };
 
 void backend_send(void *args)
 {
@@ -235,8 +226,7 @@ void backend_send(void *args)
                         bmk_sched_yield();
                         continue;
                 }
-                backend_sender_thread = bmk_current;
-                atomic_store(&backend_fring[dom]->readers, -1);
+                atomic_store(&backend_fring[dom]->readers, 0);
 
                 /* Check ring buffer one more time here */
                 idx = lfring_dequeue((struct lfring *) backend_fring[dom]->ring,
@@ -245,13 +235,15 @@ void backend_send(void *args)
                         atomic_store(&backend_fring[dom]->readers, 1);
                         break;
                 }
-                bmk_sched_blockprepare();
-                bmk_sched_block(&sender_data);
+
+		rumpuser_mutex_enter_nowrap(backend_mtx[dom]);
+                rumpuser_cv_wait_nowrap(backend_cv[dom], backend_mtx[dom]);
+                rumpuser_mutex_exit(backend_mtx[dom]);
         }
 
         slot = (syscall_args_t *)(backend_buf[dom] + idx * FSDOM_DATA_SIZE);
 	slot->argp = syscall_args->argp;
-	//slot->thread = syscall_args->thread;
+	slot->thread = syscall_args->thread;
 	slot->ret = syscall_args->ret;
 	slot->retval = syscall_args->retval;
 
@@ -425,6 +417,9 @@ void backend_connect(evtchn_port_t port)
 	}
 
 	minios_unmask_evtchn(fs_dom_info.welcome_port);
+
+	rumpuser_mutex_init(&backend_mtx[dom], RUMPUSER_MTX_SPIN);
+	rumpuser_cv_init(&backend_cv[dom]);
 
 	bmk_printf("Connected fsdom-frontend\n");
 }

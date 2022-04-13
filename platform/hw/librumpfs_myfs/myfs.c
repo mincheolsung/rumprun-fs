@@ -149,7 +149,6 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 	args->retval = retval;
 
 	rump_fsdom_switch(&old);
-	//rump_fsdom_print_curlwp(2);
 
 #ifndef FSDOM_FRONTEND
 	rumpuser_fsdom_send(args);

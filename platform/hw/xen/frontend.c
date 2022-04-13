@@ -61,7 +61,6 @@ static void *frontend_buf = NULL;
 
 static frontend_grefs_t *frontend_grefs;
 
-static struct bmk_thread *frontend_sender_thread;
 static struct bmk_thread *frontend_receiver_thread;
 
 static evtchn_port_t frontend_sender_port;
@@ -122,8 +121,7 @@ retry:
 		orig_args->ret = slot->ret;
 		orig_args->retval = slot->retval;
 
-		rumpuser_cv_signal(frontend_cv);
-		//bmk_sched_wake(slot->thread);
+		bmk_sched_wake(slot->thread);
 
                 lfring_enqueue((struct lfring *) frontend_fring->ring,
                         FSDOM_RING_ORDER, idx, false);
@@ -162,31 +160,13 @@ static void frontend_sender_handler(evtchn_port_t port,
 {
         if (atomic_exchange(&frontend_fring->readers, 1) == 0) {
 		bmk_printf("frontend_sender_handler\n");
-                bmk_sched_wake(frontend_sender_thread);
+		rumpuser_cv_signal(frontend_cv);
         }
 }
 
-static void
-sender_callback(struct bmk_thread *prev, struct bmk_block_data *_block)
-{
-	long old = -1;
-	if (!atomic_compare_exchange_strong(&frontend_fring->readers, &old, 0)) {
-		bmk_printf("sender_callback\n");
-		bmk_sched_wake(frontend_sender_thread);
-	}
-}
+static void syscall_callback(struct bmk_thread *prev, struct bmk_block_data *_block) {};
+static struct bmk_block_data syscall_data = { .callback = syscall_callback };
 
-static struct bmk_block_data sender_data = { .callback = sender_callback };
-
-/*
-static void
-sender_callback2(struct bmk_thread *prev, struct bmk_block_data *_block)
-{
-	bmk_printf("sender_callback2\n");
-}
-
-static struct bmk_block_data sender_data2 = { .callback = sender_callback2 };
-*/
 int frontend_send(void *args, long int *retval)
 {
 	size_t idx;
@@ -210,8 +190,7 @@ int frontend_send(void *args, long int *retval)
                 	bmk_sched_yield();
                         continue;
                 }
-                frontend_sender_thread = bmk_current;
-                atomic_store(&frontend_fring->readers, -1);
+                atomic_store(&frontend_fring->readers, 0);
 
                 /* Check ring buffer one more time here */
                 idx = lfring_dequeue((struct lfring *) frontend_fring->ring,
@@ -221,12 +200,12 @@ int frontend_send(void *args, long int *retval)
                         break;
                 }
 
-                bmk_sched_blockprepare();
-                bmk_sched_block(&sender_data);
+		rumpuser_mutex_enter_nowrap(frontend_mtx);
+		rumpuser_cv_wait_nowrap(frontend_cv, frontend_mtx);
+      		rumpuser_mutex_exit(frontend_mtx);
 	}
 
 	syscall_args->thread = bmk_current;
-
 	slot = (syscall_args_t *)(frontend_buf + idx * FSDOM_DATA_SIZE);
 	*slot = *syscall_args;
 
@@ -239,11 +218,9 @@ int frontend_send(void *args, long int *retval)
         }
 
 	//bmk_printf("goto sleep2\n");
-	rumpuser_mutex_enter_nowrap(frontend_mtx);
-	rumpuser_cv_wait_nowrap(frontend_cv, frontend_mtx);
-      	rumpuser_mutex_exit(frontend_mtx);
-//	bmk_sched_blockprepare();
-//      bmk_sched_block(&sender_data2);
+
+	bmk_sched_blockprepare();
+        bmk_sched_block(&syscall_data);
 	//bmk_printf("ret: %d, retval: %ld\n", slot->ret, slot->retval);
 
 	ret = slot->ret;
