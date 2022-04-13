@@ -57,7 +57,11 @@ int rumpuser_fsdom_read(struct lwp *l, const void *uap, register_t *retval)
 	args.uap = (void *)uap;
         args.call_id = READ;
 
-        ret = frontend_send(&args, retval);
+	if (SCARG((struct sys_read_args *)uap, fd) < 3) {
+		ret = rump_local_syscall(l, uap, retval, READ);
+	} else {
+		ret = frontend_send(&args, retval);
+	}
 #ifdef DEBUG
 	bmk_printf("READ fd: %d, nbyte: %ld, ret: %d, retval: %lu, buf:\n%s\n",
 				SCARG((struct sys_read_args *)uap, fd),
@@ -80,7 +84,11 @@ int rumpuser_fsdom_write(struct lwp *l, const void *uap, register_t *retval)
         args.uap = (void *)uap;
 	args.call_id = WRITE;
 
-        ret = frontend_send(&args, retval);
+	if (SCARG((struct sys_read_args *)uap, fd) < 3) {
+                ret = rump_local_syscall(l, uap, retval, WRITE);
+        } else {
+		ret = frontend_send(&args, retval);
+	}
 #ifdef DEBUG
         bmk_printf("WRITE fd: %d, nbyte: %ld, ret: %d, retval: %lu, buf:\n%s\n",
                                 SCARG((struct sys_read_args *)uap, fd),
@@ -103,7 +111,11 @@ int rumpuser_fsdom_fcntl(struct lwp *l, const void *uap, register_t *retval)
         args.uap = (void *)uap;
 	args.call_id = FCNTL;
 
-	ret = frontend_send(&args, retval);
+	if (SCARG((struct sys_read_args *)uap, fd) < 3) {
+                ret = rump_local_syscall(l, uap, retval, FCNTL);
+        } else {
+		ret = frontend_send(&args, retval);
+	}
 #ifdef DEBUG
         bmk_printf("FCNTL fd: %d, cmd: %d, arg: %lx, ret: %d, retval: %lu\n",
                                 SCARG((struct sys_fcntl_args *)uap, fd),
@@ -126,7 +138,12 @@ int rumpuser_fsdom_close(struct lwp *l, const void* uap, register_t *retval)
 	args.uap = (void *)uap;
         args.call_id = CLOSE;
 
-        ret = frontend_send(&args, retval);
+	if (SCARG((struct sys_read_args *)uap, fd) < 3) {
+		ret = rump_local_syscall(l, uap, retval, CLOSE);
+        } else {
+		ret = frontend_send(&args, retval);
+	}
+
 #ifdef DEBUG
 	bmk_printf("CLOSE fd: %d, ret: %d, retval: %lu\n",
 				SCARG((struct sys_close_args *)uap, fd),

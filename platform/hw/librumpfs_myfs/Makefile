@@ -11,6 +11,7 @@ RUMPTOP= ${TOPRUMP}
 CPPFLAGS+=      -I${RUMPTOP}/librump/rumpkern
 CPPFLAGS+=      -I${.CURDIR}
 CPPFLAGS+=	-I${.CURDIR}/../include
+CPPFLAGS+=	-I${.CURDIR}/../../xen/xen/include
 CPPFLAGS+=	-I${.CURDIR}/../../../include
 CPPFLAGS+=	${FSDOM_FLAG}
 

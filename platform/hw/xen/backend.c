@@ -160,7 +160,7 @@ again:
 retry:
 		fails = 0;
 		slot = (syscall_args_t *)(backend_buf[dom] + idx * FSDOM_DATA_SIZE);
-		//bmk_printf("backend_receiver: slot: %p, slot->argp: %p, args->thread: %p\n", slot, slot->argp, slot->thread);
+		slot->domid = (uint64_t)dom;
 		rump_fsdom_enqueue(&slot->wk);
 
 		lfring_enqueue((struct lfring *) backend_fring[dom]->ring,
@@ -370,8 +370,6 @@ void backend_connect(evtchn_port_t port)
 
 	gntmap_munmap(&backend_map[dom], (uint64_t)frontend_grefs, grefs_required);
 
-	bmk_printf("offset: %lx\n", (uint64_t)frontend_mem[dom] - frontend_base[dom]);
-	bmk_printf("size of syscall_args_t: %ld\n", sizeof(syscall_args_t));
 	rump_fsdom_set_offset((uint64_t)frontend_mem[dom] - frontend_base[dom]);
 
 	/* create a receiver thread */

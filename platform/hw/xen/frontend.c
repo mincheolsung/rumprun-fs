@@ -118,15 +118,12 @@ retry:
                 fails = 0;
 		slot = (syscall_args_t *)(frontend_buf + idx * FSDOM_DATA_SIZE);
 
-                //rumpuser__hyp.hyp_schedule();
-                //rump_fsdom_receive(slot, 1);
 		orig_args = (void *)slot->argp;
 		orig_args->ret = slot->ret;
 		orig_args->retval = slot->retval;
 
 		rumpuser_cv_signal(frontend_cv);
 		//bmk_sched_wake(slot->thread);
-                //rumpuser__hyp.hyp_unschedule();
 
                 lfring_enqueue((struct lfring *) frontend_fring->ring,
                         FSDOM_RING_ORDER, idx, false);
@@ -224,7 +221,6 @@ int frontend_send(void *args, long int *retval)
                         break;
                 }
 
-		bmk_printf("goto sleep1\n");
                 bmk_sched_blockprepare();
                 bmk_sched_block(&sender_data);
 	}
@@ -248,8 +244,7 @@ int frontend_send(void *args, long int *retval)
       	rumpuser_mutex_exit(frontend_mtx);
 //	bmk_sched_blockprepare();
 //      bmk_sched_block(&sender_data2);
-//	bmk_printf("11\n");
-//	bmk_printf("ret: %d, retval: %ld\n", slot->ret, slot->retval);
+	//bmk_printf("ret: %d, retval: %ld\n", slot->ret, slot->retval);
 
 	ret = slot->ret;
 	*retval = slot->retval;
