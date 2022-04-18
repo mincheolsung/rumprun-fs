@@ -3,7 +3,7 @@ typedef struct syscall_args {
 	void *argp;
 	void *uap;
 	void *thread;
-	uint32_t padding;
+	_Atomic(int) done;
 	int ret;
 	register_t retval;
         uint64_t call_id;
