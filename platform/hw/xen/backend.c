@@ -347,6 +347,7 @@ void backend_connect(evtchn_port_t port)
 	}
 
 	bmk_printf("range: %p ~ %p\n", frontend_mem[dom], frontend_mem[dom] + frontend_grefs->len*PAGE_SIZE);
+	bmk_printf("sizeof syscall_args_t:%lu\n", sizeof(syscall_args_t));
 
 	__asm__ __volatile__("" ::: "memory");
 

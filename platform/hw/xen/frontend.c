@@ -127,7 +127,10 @@ retry:
 		orig_args->ret = slot->ret;
 		orig_args->retval = slot->retval;
 
-		bmk_sched_wake(slot->thread);
+		int ret = atomic_exchange(&orig_args->done, 1);
+		if (ret == -1) {
+			bmk_sched_wake(slot->thread);
+		}
 
                 lfring_enqueue((struct lfring *) frontend_fring->ring,
                         FSDOM_RING_ORDER, idx, false);
@@ -170,8 +173,23 @@ static void frontend_sender_handler(evtchn_port_t port,
         }
 }
 
-static void syscall_callback(struct bmk_thread *prev, struct bmk_block_data *_block) {};
-static struct bmk_block_data syscall_data = { .callback = syscall_callback };
+struct syscall_block_data {
+        struct bmk_block_data header;
+        _Atomic(int) *done;
+        struct bmk_thread *thread;
+};
+
+
+static void syscall_callback(struct bmk_thread *prev, struct bmk_block_data *_block)
+{
+
+	struct syscall_block_data *block =
+                (struct syscall_block_data *) _block;
+
+	if (atomic_load(block->done) == 1) {
+                bmk_sched_wake(block->thread);
+	}
+}
 
 int frontend_send(void *args, long int *retval)
 {
@@ -179,6 +197,10 @@ int frontend_send(void *args, long int *retval)
 	int ret;
 	int nlocks;
 	size_t fails = 0;
+	size_t loop = 0;
+
+	struct syscall_block_data block_data;
+
 	syscall_args_t *slot;
 	syscall_args_t *syscall_args = (syscall_args_t *)args;
 
@@ -206,12 +228,15 @@ int frontend_send(void *args, long int *retval)
                         break;
                 }
 
+		bmk_printf("goto sleep1\n");
 		rumpuser_mutex_enter_nowrap(frontend_mtx);
 		rumpuser_cv_wait_nowrap(frontend_cv, frontend_mtx);
       		rumpuser_mutex_exit(frontend_mtx);
+		bmk_printf("wakeup1\n");
 	}
 
 	syscall_args->thread = bmk_current;
+	syscall_args->done = 0;
 	slot = (syscall_args_t *)(frontend_buf + idx * FSDOM_DATA_SIZE);
 	*slot = *syscall_args;
 
@@ -223,14 +248,27 @@ int frontend_send(void *args, long int *retval)
                 minios_notify_remote_via_evtchn(app_dom_info.port);
         }
 
-	//bmk_printf("goto sleep2\n");
-
-	bmk_sched_blockprepare();
-        bmk_sched_block(&syscall_data);
+	while (1) {
+		if (++loop < 1024) {
+			bmk_sched_yield();
+			if (atomic_load(&syscall_args->done) == 1) {
+				break;
+			}
+		} else {
+			atomic_store(&syscall_args->done, -1);
+			block_data.header.callback = syscall_callback;
+			block_data.thread = bmk_current;
+			block_data.done = &syscall_args->done;
+			bmk_sched_blockprepare();
+			bmk_sched_block(&block_data.header);
+			break;
+		}
+	}
 	//bmk_printf("ret: %d, retval: %ld\n", slot->ret, slot->retval);
 
 	ret = slot->ret;
 	*retval = slot->retval;
+
 out:
 	rumpkern_sched(nlocks, NULL);
 	return ret;
