@@ -11,6 +11,8 @@
 #define READ 3
 #define CLOSE 4
 #define FCNTL 5
+#define LSEEK 6
+#define FSYNC 7
 
 typedef uint32_t evtchn_port_t;
 typedef uint32_t grant_ref_t;

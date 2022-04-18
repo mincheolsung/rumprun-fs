@@ -331,7 +331,6 @@ void backend_connect(evtchn_port_t port)
 	gntmap_init(&backend_map[dom]);
 
 	grefs_required = app_dom_info[dom].grefs[0];
-	//bmk_printf("grefs_required: %u\n", grefs_required);
 
 	/* first, retrieve grefs of the shared pages */
 	frontend_grefs = gntmap_map_grant_refs(&backend_map[dom],
@@ -346,6 +345,9 @@ void backend_connect(evtchn_port_t port)
 	if (frontend_mem[dom] == NULL) {
 		bmk_platform_halt("Failed to map frontend's memory\n");
 	}
+
+	bmk_printf("range: %p ~ %p\n", frontend_mem[dom], frontend_mem[dom] + frontend_grefs->len*PAGE_SIZE);
+
 	__asm__ __volatile__("" ::: "memory");
 
 	fring_offset = frontend_grefs->fring_addr - frontend_grefs->base;

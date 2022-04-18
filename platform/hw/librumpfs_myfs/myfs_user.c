@@ -36,7 +36,7 @@ int rumpuser_fsdom_open(struct lwp *l, const void *uap, register_t *retval)
 
         ret = frontend_send(&args, retval);
 #ifdef DEBUG
-	bmk_printf("OPEN path: %s, flags: %d, mode: %d, ret: %d, retval: %lu\n",
+	bmk_printf("OPEN path: %s, flags: %d, mode: %d, ret: %d, retval: %ld\n",
 				SCARG((struct sys_open_args *)uap, path),
 				SCARG((struct sys_open_args *)uap, flags),
 				SCARG((struct sys_open_args *)uap, mode),
@@ -63,7 +63,7 @@ int rumpuser_fsdom_read(struct lwp *l, const void *uap, register_t *retval)
 		ret = frontend_send(&args, retval);
 	}
 #ifdef DEBUG
-	bmk_printf("READ fd: %d, nbyte: %ld, ret: %d, retval: %lu, buf:\n%s\n",
+	bmk_printf("READ fd: %d, nbyte: %ld, ret: %d, retval: %ld, buf:\n%s\n",
 				SCARG((struct sys_read_args *)uap, fd),
 				SCARG((struct sys_read_args *)uap, nbyte),
                                 ret, *retval,
@@ -84,17 +84,17 @@ int rumpuser_fsdom_write(struct lwp *l, const void *uap, register_t *retval)
         args.uap = (void *)uap;
 	args.call_id = WRITE;
 
-	if (SCARG((struct sys_read_args *)uap, fd) < 3) {
+	if (SCARG((struct sys_write_args *)uap, fd) < 3) {
                 ret = rump_local_syscall(l, uap, retval, WRITE);
         } else {
 		ret = frontend_send(&args, retval);
 	}
 #ifdef DEBUG
-        bmk_printf("WRITE fd: %d, nbyte: %ld, ret: %d, retval: %lu, buf:\n%s\n",
-                                SCARG((struct sys_read_args *)uap, fd),
-                                SCARG((struct sys_read_args *)uap, nbyte),
+        bmk_printf("WRITE fd: %d, nbyte: %ld, ret: %d, retval: %ld, buf:\n%s\n",
+                                SCARG((struct sys_write_args *)uap, fd),
+                                SCARG((struct sys_write_args *)uap, nbyte),
                                 ret, *retval,
-                                (const char *)SCARG((struct sys_read_args *)uap, buf));
+                                (const char *)SCARG((struct sys_write_args *)uap, buf));
 #endif
 	return ret;
 #else
@@ -111,13 +111,13 @@ int rumpuser_fsdom_fcntl(struct lwp *l, const void *uap, register_t *retval)
         args.uap = (void *)uap;
 	args.call_id = FCNTL;
 
-	if (SCARG((struct sys_read_args *)uap, fd) < 3) {
+	if (SCARG((struct sys_fcntl_args *)uap, fd) < 3) {
                 ret = rump_local_syscall(l, uap, retval, FCNTL);
         } else {
 		ret = frontend_send(&args, retval);
 	}
 #ifdef DEBUG
-        bmk_printf("FCNTL fd: %d, cmd: %d, arg: %lx, ret: %d, retval: %lu\n",
+        bmk_printf("FCNTL fd: %d, cmd: %d, arg: %lx, ret: %d, retval: %ld\n",
                                 SCARG((struct sys_fcntl_args *)uap, fd),
                                 SCARG((struct sys_fcntl_args *)uap, cmd),
                                 *(uint64_t *)SCARG((struct sys_fcntl_args *)uap, arg),
@@ -138,16 +138,67 @@ int rumpuser_fsdom_close(struct lwp *l, const void* uap, register_t *retval)
 	args.uap = (void *)uap;
         args.call_id = CLOSE;
 
-	if (SCARG((struct sys_read_args *)uap, fd) < 3) {
+	if (SCARG((struct sys_close_args *)uap, fd) < 3) {
 		ret = rump_local_syscall(l, uap, retval, CLOSE);
         } else {
 		ret = frontend_send(&args, retval);
 	}
 
 #ifdef DEBUG
-	bmk_printf("CLOSE fd: %d, ret: %d, retval: %lu\n",
-				SCARG((struct sys_close_args *)uap, fd),
+	bmk_printf("CLOSE fd: %d, ret: %d, retval: %ld\n",
+				SCARG((struct sys_close_args *)uap, fd), ret, *retval);
+#endif
+        return ret;
+#else
+	return 0;
+#endif
+}
+
+int rumpuser_fsdom_lseek(struct lwp *l, const void *uap, register_t *retval)
+{
+#ifdef FSDOM_FRONTEND
+        int ret;
+        syscall_args_t args;
+	args.argp = &args;
+	args.uap = (void *)uap;
+        args.call_id = LSEEK;
+
+	if (SCARG((struct sys_lseek_args *)uap, fd) < 3) {
+		ret = rump_local_syscall(l, uap, retval, LSEEK);
+        } else {
+		ret = frontend_send(&args, retval);
+	}
+#ifdef DEBUG
+	bmk_printf("LSEEK fd: %d, PAD: %d, offset: %ld, whence: %d, ret: %d, retval: %ld\n",
+				SCARG((struct sys_lseek_args *)uap, fd),
+				SCARG((struct sys_lseek_args *)uap, PAD),
+				SCARG((struct sys_lseek_args *)uap, offset),
+				SCARG((struct sys_lseek_args *)uap, whence),
                                 ret, *retval);
+#endif
+        return ret;
+#else
+	return 0;
+#endif
+}
+
+int rumpuser_fsdom_fsync(struct lwp *l, const void *uap, register_t *retval)
+{
+#ifdef FSDOM_FRONTEND
+        int ret;
+        syscall_args_t args;
+	args.argp = &args;
+	args.uap = (void *)uap;
+        args.call_id = FSYNC;
+
+	if (SCARG((struct sys_fsync_args *)uap, fd) < 3) {
+		ret = rump_local_syscall(l, uap, retval, FSYNC);
+        } else {
+		ret = frontend_send(&args, retval);
+	}
+#ifdef DEBUG
+	bmk_printf("FSYNC fd: %d, ret: %d, retval: %ld\n",
+				SCARG((struct sys_fsync_args *)uap, fd), ret, *retval);
 #endif
         return ret;
 #else

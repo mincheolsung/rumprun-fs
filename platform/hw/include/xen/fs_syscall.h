@@ -42,11 +42,24 @@ check_syscall_args(sys_open)
 struct sys_close_args {
 	syscallarg(int) fd;
 };
+check_syscall_args(sys_close)
 
 struct sys_fcntl_args {
 	syscallarg(int) fd;
 	syscallarg(int) cmd;
 	syscallarg(void *) arg;
 };
+check_syscall_args(sys_fcntl)
 
-check_syscall_args(sys_close)
+struct sys_lseek_args {
+        syscallarg(int) fd;
+        syscallarg(int) PAD;
+        syscallarg(off_t) offset;
+        syscallarg(int) whence;
+};
+check_syscall_args(sys_lseek)
+
+struct sys_fsync_args {
+        syscallarg(int) fd;
+};
+check_syscall_args(sys_fsync)

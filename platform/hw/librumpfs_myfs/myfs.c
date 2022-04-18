@@ -37,8 +37,8 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 {
 	int ret;
 	struct lwp *old;
-	register_t retval;
 	syscall_args_t *args;
+	register_t retval = 0;
 
 	args = (syscall_args_t *)wk;
 
@@ -57,7 +57,7 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 
 			ret = sys_open(curlwp, (const struct sys_open_args *)&syscall_args, &retval);
 #ifdef DEBUG
-			aprint_normal("OPEN path: %s, flags: %d, mode: %d, ret: %d, retval: %lu\n",
+			aprint_normal("OPEN path: %s, flags: %d, mode: %d, ret: %d, retval: %ld\n",
 				SCARG(&syscall_args, path),
 				SCARG(&syscall_args, flags),
 				SCARG(&syscall_args, mode),
@@ -76,7 +76,7 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 
 			ret = sys_read(curlwp, (const struct sys_read_args *)&syscall_args, &retval);
 #ifdef DEBUG
-			aprint_normal("READ fd: %d, nbyte: %ld, ret: %d, retval: %lu, buf:\n%s\n",
+			aprint_normal("READ fd: %d, nbyte: %ld, ret: %d, retval: %ld, buf:\n%s\n",
                                 SCARG(&syscall_args, fd),
                                 SCARG(&syscall_args, nbyte),
                                 ret, retval,
@@ -95,7 +95,7 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 
 			ret = sys_write(curlwp, (const struct sys_write_args *)&syscall_args, &retval);
 #ifdef DEBUG
-			aprint_normal("WRITE fd: %d, nbyte: %ld, ret: %d, retval: %lu, buf:\n%s\n",
+			aprint_normal("WRITE fd: %d, nbyte: %ld, ret: %d, retval: %ld, buf:\n%s\n",
                                 SCARG(&syscall_args, fd),
                                 SCARG(&syscall_args, nbyte),
                                 ret, retval,
@@ -112,7 +112,7 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 
                         ret = sys_close(curlwp, (const struct sys_close_args *)&syscall_args, &retval);
 #ifdef DEBUG
-                        aprint_normal("CLOSE fd: %d, ret: %d, retval: %lu\n",
+                        aprint_normal("CLOSE fd: %d, ret: %d, retval: %ld\n",
                                 SCARG(&syscall_args, fd),
                                 ret, retval);
 #endif
@@ -129,10 +129,48 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 
 			ret = sys_fcntl(curlwp, (const struct sys_fcntl_args *)&syscall_args, &retval);
 #ifdef DEBUG
-			aprint_normal("FCNTL fd: %d, cmd: %d, arg: %lx, ret: %d, retval: %lu\n",
+			aprint_normal("FCNTL fd: %d, cmd: %d, arg: %lx, ret: %d, retval: %ld\n",
                                 SCARG(&syscall_args, fd),
                                 SCARG(&syscall_args, cmd),
                                 *(uint64_t *)SCARG(&syscall_args, arg),
+                                ret, retval);
+#endif
+			break;
+		}
+
+		case LSEEK:
+		{
+			struct sys_lseek_args syscall_args;
+			struct sys_lseek_args *uap = (struct sys_lseek_args *)((uint64_t)args->uap + rump_offset);
+
+			SCARG(&syscall_args, fd) = SCARG(uap, fd);
+		        SCARG(&syscall_args, PAD) = SCARG(uap, PAD);
+			SCARG(&syscall_args, offset) = SCARG(uap, offset);
+			SCARG(&syscall_args, whence) = SCARG(uap, whence);
+
+			ret = sys_lseek(curlwp, (const struct sys_lseek_args *)&syscall_args, &retval);
+#ifdef DEBUG
+			aprint_normal("LSEEK fd: %d, PAD: %d, offset: %ld, whence: %d, ret: %d, retval: %ld\n",
+                                SCARG(&syscall_args, fd),
+                                SCARG(&syscall_args, PAD),
+                                SCARG(&syscall_args, offset),
+                                SCARG(&syscall_args, whence),
+                                ret, retval);
+#endif
+			break;
+		}
+
+		case FSYNC:
+		{
+			struct sys_fsync_args syscall_args;
+			struct sys_fsync_args *uap = (struct sys_fsync_args *)((uint64_t)args->uap + rump_offset);
+
+			SCARG(&syscall_args, fd) = SCARG(uap, fd);
+
+			ret = sys_fsync(curlwp, (const struct sys_fsync_args *)&syscall_args, &retval);
+#ifdef DEBUG
+			aprint_normal("FSYNC fd: %d, ret: %d, retval: %ld\n",
+                                SCARG(&syscall_args, fd),
                                 ret, retval);
 #endif
 			break;
@@ -157,7 +195,6 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 
 void rump_fsdom_init_workqueue(void)
 {
-	aprint_normal("size of syscall_args_t: %ld register_t: %ld\n", sizeof(syscall_args_t), sizeof(register_t));
 	int error, i;
 	if ((error = workqueue_create(&rump_fsdom_workqueue, "fsdoned", \
             rump_fsdom_work, NULL, PRI_NONE, IPL_NONE, WQ_MPSAFE))) {
@@ -166,6 +203,7 @@ void rump_fsdom_init_workqueue(void)
 
 	for (i = 0; i < RUMPRUN_NUM_OF_APPS; i++) {
 		rump_app_lwp_tbl[i] = NULL;
+		//rump_fd_tbl[i] = NULL;
 	}
 }
 
@@ -205,6 +243,18 @@ int rump_local_syscall(struct lwp *l, const void *uap, register_t *retval, int o
 		case CLOSE:
 		{
 			ret = sys_close(l, (const struct sys_close_args *)uap, retval);
+			break;
+		}
+
+		case LSEEK:
+		{
+			ret = sys_lseek(l, (const struct sys_lseek_args *)uap, retval);
+			break;
+		}
+
+		case FSYNC:
+		{
+			ret = sys_fsync(l, (const struct sys_fsync_args *)uap, retval);
 			break;
 		}
 

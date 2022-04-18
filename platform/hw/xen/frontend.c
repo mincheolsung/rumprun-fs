@@ -49,6 +49,8 @@
 #include <xen/fs_hypercall.h>
 #include <xen/_rumprun.h>
 
+#include "../../../nfsd/src/mytime.h"
+
 #define frontend_virt_to_pfn(a)	((uint64_t) (a) >> PAGE_SHIFT)
 
 static backend_connect_t fs_dom_info;
@@ -70,6 +72,10 @@ static struct rumpuser_mtx *frontend_mtx;
 static struct rumpuser_cv *frontend_cv;
 
 //static _Atomic(int) frontend_terminating = ATOMIC_VAR_INIT(0);
+
+static void frontend_gettime(int64_t *sec, long *nsec) {
+        rumpuser_clock_gettime(RUMPUSER_CLOCK_ABSMONO, sec, nsec);
+}
 
 static void frontend_hello_handler(evtchn_port_t port, struct pt_regs *regs,
 		void *data)
@@ -392,4 +398,6 @@ void frontend_init(void)
 
 	rumpuser_mutex_init(&frontend_mtx, RUMPUSER_MTX_SPIN);
         rumpuser_cv_init(&frontend_cv);
+
+	my_gettime = frontend_gettime;
 }
