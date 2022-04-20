@@ -179,7 +179,6 @@ struct syscall_block_data {
         struct bmk_thread *thread;
 };
 
-
 static void syscall_callback(struct bmk_thread *prev, struct bmk_block_data *_block)
 {
 

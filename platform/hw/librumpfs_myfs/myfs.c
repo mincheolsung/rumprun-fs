@@ -13,6 +13,7 @@
 
 //#define DEBUG
 
+#ifndef FSDOM_FRONTEND /* backend */
 static uint64_t rump_offset;
 static struct workqueue *rump_fsdom_workqueue;
 
@@ -188,9 +189,7 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 
 	rump_fsdom_switch(&old);
 
-#ifndef FSDOM_FRONTEND
 	rumpuser_fsdom_send(args);
-#endif
 }
 
 void rump_fsdom_init_workqueue(void)
@@ -203,7 +202,6 @@ void rump_fsdom_init_workqueue(void)
 
 	for (i = 0; i < RUMPRUN_NUM_OF_APPS; i++) {
 		rump_app_lwp_tbl[i] = NULL;
-		//rump_fd_tbl[i] = NULL;
 	}
 }
 
@@ -217,6 +215,7 @@ void rump_fsdom_enqueue(void *wk)
 	workqueue_enqueue(rump_fsdom_workqueue, (struct work *)wk, NULL);
 }
 
+#else /* frontend */
 int rump_local_syscall(struct lwp *l, const void *uap, register_t *retval, int op)
 {
 	int ret;
@@ -268,6 +267,7 @@ int rump_local_syscall(struct lwp *l, const void *uap, register_t *retval, int o
 
 	return ret;
 }
+#endif
 
 void rump_fsdom_print_curlwp(int i)
 {
