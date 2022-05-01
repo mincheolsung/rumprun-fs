@@ -26,7 +26,6 @@ static void *rump_fsdom_switch(struct lwp **new)
 
 	if (*new == NULL) {
 		*new = rump__lwproc_alloclwp(NULL);
-		(*new)->l_proc->p_fd->fd_freefile = 3;
 	}
 
 	rump_lwproc_switch(*new);
@@ -77,7 +76,7 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 
 			ret = sys_read(curlwp, (const struct sys_read_args *)&syscall_args, &retval);
 #ifdef DEBUG
-			aprint_normal("READ fd: %d, nbyte: %ld, ret: %d, retval: %ld, buf:\n%s\n",
+			aprint_normal("READ fd: %d, nbyte: %ld, ret: %d, retval: %ld,  buf:\n%s\n",
                                 SCARG(&syscall_args, fd),
                                 SCARG(&syscall_args, nbyte),
                                 ret, retval,
@@ -145,15 +144,13 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 			struct sys_lseek_args *uap = (struct sys_lseek_args *)((uint64_t)args->uap + rump_offset);
 
 			SCARG(&syscall_args, fd) = SCARG(uap, fd);
-		        SCARG(&syscall_args, PAD) = SCARG(uap, PAD);
 			SCARG(&syscall_args, offset) = SCARG(uap, offset);
 			SCARG(&syscall_args, whence) = SCARG(uap, whence);
 
 			ret = sys_lseek(curlwp, (const struct sys_lseek_args *)&syscall_args, &retval);
 #ifdef DEBUG
-			aprint_normal("LSEEK fd: %d, PAD: %d, offset: %ld, whence: %d, ret: %d, retval: %ld\n",
+			aprint_normal("LSEEK fd: %d, offset: %ld, whence: %d, ret: %d, retval: %ld\n",
                                 SCARG(&syscall_args, fd),
-                                SCARG(&syscall_args, PAD),
                                 SCARG(&syscall_args, offset),
                                 SCARG(&syscall_args, whence),
                                 ret, retval);
@@ -177,6 +174,189 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 			break;
 		}
 
+		case FSTAT:
+		{
+			struct sys___fstat50_args syscall_args;
+			struct sys___fstat50_args *uap = (struct sys___fstat50_args *)((uint64_t)args->uap + rump_offset);
+
+			SCARG(&syscall_args, fd) = SCARG(uap, fd);
+			SCARG(&syscall_args, sb) = (struct stat *)((uint64_t)SCARG(uap, sb) + rump_offset);
+
+			ret = sys___fstat50(curlwp, (const struct sys___fstat50_args *)&syscall_args, &retval);
+#ifdef DEBUG
+			aprint_normal("FSTAT fd: %d, sb: %p, ret: %d, retval: %ld\n",
+                                SCARG(&syscall_args, fd), SCARG(&syscall_args, sb),
+                                ret, retval);
+#endif
+			break;
+		}
+
+		case STAT:
+		{
+			struct sys___stat50_args syscall_args;
+			struct sys___stat50_args *uap = (struct sys___stat50_args *)((uint64_t)args->uap + rump_offset);
+
+			SCARG(&syscall_args, path) = (char *)((uint64_t)SCARG(uap, path) + rump_offset);
+			SCARG(&syscall_args, ub) = (struct stat *)((uint64_t)SCARG(uap, ub) + rump_offset);
+
+			ret = sys___stat50(curlwp, (const struct sys___stat50_args *)&syscall_args, &retval);
+#ifdef DEBUG
+			aprint_normal("STAT path: %s, ub: %p, ret: %d, retval: %ld\n",
+                                SCARG(&syscall_args, path), SCARG(&syscall_args, ub),
+                                ret, retval);
+#endif
+			break;
+		}
+
+		case LSTAT:
+		{
+			struct sys___lstat50_args syscall_args;
+			struct sys___lstat50_args *uap = (struct sys___lstat50_args *)((uint64_t)args->uap + rump_offset);
+
+			SCARG(&syscall_args, path) = (char *)((uint64_t)SCARG(uap, path) + rump_offset);
+			SCARG(&syscall_args, ub) = (struct stat *)((uint64_t)SCARG(uap, ub) + rump_offset);
+
+			ret = sys___lstat50(curlwp, (const struct sys___lstat50_args *)&syscall_args, &retval);
+#ifdef DEBUG
+			aprint_normal("LSTAT path: %s, ub: %p, ret: %d, retval: %ld\n",
+                                SCARG(&syscall_args, path), SCARG(&syscall_args, ub),
+                                ret, retval);
+#endif
+			break;
+		}
+
+		case STATVFS1:
+		{
+			struct sys_statvfs1_args syscall_args;
+			struct sys_statvfs1_args *uap = (struct sys_statvfs1_args *)((uint64_t)args->uap + rump_offset);
+
+			SCARG(&syscall_args, path) = (char *)((uint64_t)SCARG(uap, path) + rump_offset);
+			SCARG(&syscall_args, buf) = (struct statvfs *)((uint64_t)SCARG(uap, buf) + rump_offset);
+		        SCARG(&syscall_args, flags) = SCARG(uap, flags);
+
+			ret = sys_statvfs1(curlwp, (const struct sys_statvfs1_args *)&syscall_args, &retval);
+#ifdef DEBUG
+			aprint_normal("STATVFS1 path: %s, flags: %d, buf: %p, ret: %d, retval: %ld\n",
+                                SCARG(&syscall_args, path),
+				SCARG(&syscall_args, flags),
+				SCARG(&syscall_args, buf),
+                                ret, retval);
+#endif
+			break;
+		}
+
+		case PREAD:
+		{
+			struct sys_pread_args syscall_args;
+			struct sys_pread_args *uap = (struct sys_pread_args *)((uint64_t)args->uap + rump_offset);
+			SCARG(&syscall_args, fd) = SCARG(uap, fd);
+		        SCARG(&syscall_args, buf) = (void *)((uint64_t)SCARG(uap, buf) + rump_offset);
+     			SCARG(&syscall_args, nbyte) = SCARG(uap, nbyte);
+     			SCARG(&syscall_args, offset) = SCARG(uap, offset);
+
+			ret = sys_pread(curlwp, (const struct sys_pread_args *)&syscall_args, &retval);
+#ifdef DEBUG
+			aprint_normal("PREAD fd: %d, nbyte: %ld, offset: %ld, ret: %d, retval: %ld\n",
+                                SCARG(&syscall_args, fd),
+                                SCARG(&syscall_args, nbyte),
+                                SCARG(&syscall_args, offset),
+                                ret, retval);
+#endif
+			break;
+		}
+
+		case PWRITE:
+		{
+			struct sys_pwrite_args syscall_args;
+			struct sys_pwrite_args *uap = (struct sys_pwrite_args *)((uint64_t)args->uap + rump_offset);
+			SCARG(&syscall_args, fd) = SCARG(uap, fd);
+		        SCARG(&syscall_args, buf) = (void *)((uint64_t)SCARG(uap, buf) + rump_offset);
+     			SCARG(&syscall_args, nbyte) = SCARG(uap, nbyte);
+     			SCARG(&syscall_args, offset) = SCARG(uap, offset);
+
+			ret = sys_pwrite(curlwp, (const struct sys_pwrite_args *)&syscall_args, &retval);
+#ifdef DEBUG
+			aprint_normal("PWRITE fd: %d, nbyte: %ld, offset: %ld, ret: %d, retval: %ld\n",
+                                SCARG(&syscall_args, fd),
+                                SCARG(&syscall_args, nbyte),
+                                SCARG(&syscall_args, offset),
+                                ret, retval);
+#endif
+			break;
+		}
+
+		case ACCESS:
+                {
+                        struct sys_access_args syscall_args;
+                        struct sys_access_args *uap = (struct sys_access_args *)((uint64_t)args->uap + rump_offset);
+
+                        SCARG(&syscall_args, path) = (char *)((uint64_t)SCARG(uap, path) + rump_offset);
+                        SCARG(&syscall_args, flags) = SCARG(uap, flags);
+
+                        ret = sys_access(curlwp, (const struct sys_access_args *)&syscall_args, &retval);
+#ifdef DEBUG
+                        aprint_normal("ACCESS path: %s, flags: %d, ret: %d, retval: %ld\n",
+                                SCARG(&syscall_args, path), SCARG(&syscall_args, flags),
+                                ret, retval);
+#endif
+                        break;
+                }
+
+		case MKDIR:
+                {
+                        struct sys_mkdir_args syscall_args;
+                        struct sys_mkdir_args *uap = (struct sys_mkdir_args *)((uint64_t)args->uap + rump_offset);
+
+                        SCARG(&syscall_args, path) = (char *)((uint64_t)SCARG(uap, path) + rump_offset);
+                        SCARG(&syscall_args, mode) = SCARG(uap, mode);
+
+                        ret = sys_mkdir(curlwp, (const struct sys_mkdir_args *)&syscall_args, &retval);
+#ifdef DEBUG
+                        aprint_normal("MKDIR path: %s, mode: %d, ret: %d, retval: %ld\n",
+                                SCARG(&syscall_args, path), SCARG(&syscall_args, mode),
+                                ret, retval);
+#endif
+                        break;
+                }
+
+		case CHOWN:
+                {
+                        struct sys_chown_args syscall_args;
+                        struct sys_chown_args *uap = (struct sys_chown_args *)((uint64_t)args->uap + rump_offset);
+
+                        SCARG(&syscall_args, path) = (char *)((uint64_t)SCARG(uap, path) + rump_offset);
+                        SCARG(&syscall_args, uid) = SCARG(uap, uid);
+                        SCARG(&syscall_args, gid) = SCARG(uap, gid);
+
+                        ret = sys_chown(curlwp, (const struct sys_chown_args *)&syscall_args, &retval);
+#ifdef DEBUG
+                        aprint_normal("CHOWN path: %s, uid: %u, gid: %u, ret: %d, retval: %ld\n",
+                                SCARG(&syscall_args, path),
+				SCARG(&syscall_args, uid),
+				SCARG(&syscall_args, gid),
+                                ret, retval);
+#endif
+			break;
+		}
+#if 0
+		case DUP2:
+                {
+                        struct sys_dup2_args syscall_args;
+                        struct sys_dup2_args *uap = (struct sys_dup2_args *)((uint64_t)args->uap + rump_offset);
+
+                        SCARG(&syscall_args, from) = SCARG(uap, from);
+                        SCARG(&syscall_args, to) = SCARG(uap, to);
+
+                        ret = sys_dup2(curlwp, (const struct sys_dup2_args *)&syscall_args, &retval);
+#ifdef DEBUG
+                        aprint_normal("DUP2 from: %d, to: %d, ret: %d, retval: %ld\n",
+				SCARG(&syscall_args, from),
+				SCARG(&syscall_args, to),
+                                ret, retval);
+#endif
+			break;
+		}
+#endif
 		default:
 		{
 			aprint_normal("Unsupported operation\n");
@@ -257,6 +437,30 @@ int rump_local_syscall(struct lwp *l, const void *uap, register_t *retval, int o
 			break;
 		}
 
+		case FSTAT:
+		{
+			ret = sys___fstat50(l, (const struct sys___fstat50_args *)uap, retval);
+			break;
+		}
+
+		case PREAD:
+		{
+			ret = sys_pread(l,(const struct sys_pread_args *) uap, retval);
+			break;
+		}
+
+		case PWRITE:
+		{
+			ret = sys_pwrite(l, (const struct sys_pwrite_args *)uap, retval);
+			break;
+		}
+
+		case DUP2:
+		{
+			ret = sys_dup2(l, (const struct sys_dup2_args *)uap, retval);
+			break;
+		}
+
 		default:
 		{
 			aprint_normal("rump_local_syscall: unsupported op\n");
@@ -267,9 +471,31 @@ int rump_local_syscall(struct lwp *l, const void *uap, register_t *retval, int o
 
 	return ret;
 }
+
+int rump_fsdom_fd_alloc(int *new_fd)
+{
+        int error;
+        proc_t *p = curproc;
+
+        while ((error = fd_alloc(p, 0, new_fd)) != 0) {
+                if (error != ENOSPC) {
+			aprint_normal("fd_alloc fails, errno: %d\n", error);
+                        return error;
+                }
+                fd_tryexpand(p);
+        }
+
+        return 0;
+}
+
+void rump_fsdom_fd_abort(int target_fd)
+{
+        proc_t *p = curproc;
+	fd_abort(p, NULL, target_fd);
+}
 #endif
 
 void rump_fsdom_print_curlwp(int i)
 {
-	aprint_normal("FOOBAR [%d] lwp: %p, proc: %p, p_fd: %p\n", i, curlwp, curlwp->l_proc, curlwp->l_proc->p_fd);
+	aprint_normal("FOOBAR [%d] lwp: %p, proc: %p, p_fd: %p, freefile: %d, lastfile: %d\n", i, curlwp, curlwp->l_proc, curlwp->l_proc->p_fd, curlwp->l_proc->p_fd->fd_freefile, curlwp->l_proc->p_fd->fd_lastfile);
 }

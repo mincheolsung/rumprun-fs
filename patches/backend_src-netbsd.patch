@@ -1,0 +1,119 @@
+diff --git a/sys/arch/amd64/include/param.h b/sys/arch/amd64/include/param.h
+index 8acacb9938de..77237af366f1 100644
+--- a/sys/arch/amd64/include/param.h
++++ b/sys/arch/amd64/include/param.h
+@@ -83,10 +83,10 @@
+  * clusters (MAPPED_MBUFS), MCLBYTES must also be an integral multiple
+  * of the hardware page size.
+  */
+-#define	MSIZE		512		/* size of an mbuf */
++#define	MSIZE		4096		/* size of an mbuf */
+ 
+ #ifndef MCLSHIFT
+-#define	MCLSHIFT	11		/* convert bytes to m_buf clusters */
++#define	MCLSHIFT	12		/* convert bytes to m_buf clusters */
+ 					/* 2K cluster can hold Ether frame */
+ #endif	/* MCLSHIFT */
+ 
+diff --git a/sys/dev/pci/ixgbe/ixgbe.c b/sys/dev/pci/ixgbe/ixgbe.c
+index 93fc8c03f8fd..3f0079f3a5fc 100644
+--- a/sys/dev/pci/ixgbe/ixgbe.c
++++ b/sys/dev/pci/ixgbe/ixgbe.c
+@@ -306,7 +306,7 @@ MODULE_DEPEND(ix, netmap, 1, 1, 1);
+  * is varied over time based on the
+  * traffic for that interrupt vector
+  */
+-static bool ixgbe_enable_aim = true;
++static bool ixgbe_enable_aim = false;
+ #define SYSCTL_INT(_a1, _a2, _a3, _a4, _a5, _a6, _a7)
+ SYSCTL_INT(_hw_ix, OID_AUTO, enable_aim, CTLFLAG_RDTUN, &ixgbe_enable_aim, 0,
+     "Enable adaptive interrupt moderation");
+@@ -6445,6 +6445,8 @@ ixgbe_allocate_legacy(struct adapter *adapter,
+ 	const char	*intrstr = NULL;
+ 	int defertx_error = 0, error;
+ 
++	/* Used in ixgbe_enable_intr */
++	que->msix = 0;
+ 	/* We allocate a single interrupt resource */
+ 	max_type = PCI_INTR_TYPE_MSI;
+ 	counts[PCI_INTR_TYPE_MSIX] = 0;
+@@ -6776,7 +6778,8 @@ ixgbe_configure_interrupts(struct adapter *adapter)
+ 	 *  NetBSD only: Use single vector MSI when number of CPU is 1 to save
+ 	 * interrupt slot.
+ 	 */
+-	if (ncpu == 1)
++	/* Avoid MSI-X path completely for now */
++	/* if (ncpu == 1) */
+ 		goto msi;
+ 
+ 	/* First try MSI-X */
+diff --git a/sys/kern/subr_cprng.c b/sys/kern/subr_cprng.c
+index c29922f8412f..dfece539543d 100644
+--- a/sys/kern/subr_cprng.c
++++ b/sys/kern/subr_cprng.c
+@@ -49,6 +49,8 @@ __KERNEL_RCSID(0, "$NetBSD: subr_cprng.c,v 1.30.2.2 2019/11/25 17:00:22 martin E
+ #include <sys/systm.h>
+ #include <sys/sysctl.h>
+ #include <sys/rndsink.h>
++
++#undef DIAGNOSTIC
+ #if DIAGNOSTIC
+ #include <sys/rngtest.h>
+ #endif
+diff --git a/sys/rump/include/rump/rumpuser.h b/sys/rump/include/rump/rumpuser.h
+index bbdcbb0cc377..a9472ae9b3e5 100644
+--- a/sys/rump/include/rump/rumpuser.h
++++ b/sys/rump/include/rump/rumpuser.h
+@@ -67,6 +67,9 @@ struct rumpuser_hyperup {
+ };
+ int rumpuser_init(int, const struct rumpuser_hyperup *);
+ 
++/* filesystem server */
++extern void(*rumpuser_fsdom_init)(void);
++
+ /*
+  * memory allocation
+  */
+diff --git a/sys/rump/librump/rumpkern/vm.c b/sys/rump/librump/rumpkern/vm.c
+index 321a7fb7d7ef..d5bc1a7ead9e 100644
+--- a/sys/rump/librump/rumpkern/vm.c
++++ b/sys/rump/librump/rumpkern/vm.c
+@@ -635,7 +635,9 @@ uvm_page_unbusy(struct vm_page **pgs, int npgs)
+ 	int i;
+ 
+ 	KASSERT(npgs > 0);
+-	KASSERT(mutex_owned(pgs[0]->uobject->vmobjlock));
++	if (pgs[0] != NULL) {
++		KASSERT(mutex_owned(pgs[0]->uobject->vmobjlock));
++	}
+ 
+ 	for (i = 0; i < npgs; i++) {
+ 		pg = pgs[i];
+diff --git a/sys/sys/cdefs.h b/sys/sys/cdefs.h
+index e051e082e900..9f940446d8f1 100644
+--- a/sys/sys/cdefs.h
++++ b/sys/sys/cdefs.h
+@@ -498,8 +498,10 @@
+  * didn't permit keeping the keywords out of the application namespace).
+  */
+ #if __GNUC_PREREQ__(2, 7) || defined(__lint__)
++#ifndef __printflike
+ #define __printflike(fmtarg, firstvararg)	\
+ 	    __attribute__((__format__ (__printf__, fmtarg, firstvararg)))
++#endif
+ #ifndef __syslog_attribute__
+ #define __syslog__ __printf__
+ #endif
+diff --git a/sys/sys/param.h b/sys/sys/param.h
+index 00ed6daaf359..1391d857391d 100644
+--- a/sys/sys/param.h
++++ b/sys/sys/param.h
+@@ -177,7 +177,7 @@
+ #define	DEV_BSIZE	(1 << DEV_BSHIFT)	/* 512 */
+ 
+ #ifndef BLKDEV_IOSIZE
+-#define	BLKDEV_IOSIZE	2048
++#define	BLKDEV_IOSIZE	(64 * 1024)
+ #endif
+ 
+ #ifndef MAXPHYS

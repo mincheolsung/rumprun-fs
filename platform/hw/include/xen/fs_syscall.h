@@ -1,4 +1,5 @@
 typedef long int register_t;
+
 #define SYS_MAXSYSARGS  8
 #define syscallarg(x)                                                   \
 	union {                                                         \
@@ -63,3 +64,33 @@ struct sys_fsync_args {
         syscallarg(int) fd;
 };
 check_syscall_args(sys_fsync)
+
+struct sys___fstat50_args {
+        syscallarg(int) fd;
+        syscallarg(struct stat *) sb;
+};
+check_syscall_args(sys___fstat50)
+
+struct sys_pread_args {
+        syscallarg(int) fd;
+        syscallarg(void *) buf;
+        syscallarg(size_t) nbyte;
+        syscallarg(int) PAD;
+        syscallarg(off_t) offset;
+};
+check_syscall_args(sys_pread)
+
+struct sys_pwrite_args {
+        syscallarg(int) fd;
+        syscallarg(const void *) buf;
+        syscallarg(size_t) nbyte;
+        syscallarg(int) PAD;
+        syscallarg(off_t) offset;
+};
+check_syscall_args(sys_pwrite)
+
+struct sys_dup2_args {
+        syscallarg(int) from;
+        syscallarg(int) to;
+};
+check_syscall_args(sys_dup2)

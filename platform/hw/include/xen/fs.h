@@ -13,6 +13,17 @@
 #define FCNTL 5
 #define LSEEK 6
 #define FSYNC 7
+#define FSTAT 8
+#define STAT 9
+#define LSTAT 10
+#define STATVFS1 11
+#define NFSSVC 12
+#define PREAD 13
+#define PWRITE 14
+#define ACCESS 15
+#define MKDIR 16
+#define CHOWN 17
+#define DUP2 18
 
 typedef uint32_t evtchn_port_t;
 typedef uint32_t grant_ref_t;
