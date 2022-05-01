@@ -17,13 +17,12 @@
 #define STAT 9
 #define LSTAT 10
 #define STATVFS1 11
-#define NFSSVC 12
-#define PREAD 13
-#define PWRITE 14
-#define ACCESS 15
-#define MKDIR 16
-#define CHOWN 17
-#define DUP2 18
+#define PREAD 12
+#define PWRITE 13
+#define ACCESS 14
+#define MKDIR 15
+#define CHOWN 16
+#define DUP2 17
 
 typedef uint32_t evtchn_port_t;
 typedef uint32_t grant_ref_t;
