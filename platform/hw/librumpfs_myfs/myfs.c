@@ -18,6 +18,7 @@ static uint64_t rump_offset;
 static struct workqueue *rump_fsdom_workqueue;
 
 static struct lwp *rump_app_lwp_tbl[RUMPRUN_NUM_OF_APPS];
+/*
 static void *rump_fsdom_switch(struct lwp **new)
 {
 	struct lwp *old;
@@ -32,18 +33,18 @@ static void *rump_fsdom_switch(struct lwp **new)
 
 	return old;
 }
-
+*/
 static void rump_fsdom_work(struct work *wk, void *dummy)
 {
 	int ret;
-	struct lwp *old;
+	//struct lwp *old;
 	syscall_args_t *args;
 	register_t retval = 0;
 
 	args = (syscall_args_t *)wk;
 
 	KASSERT(args->domid < RUMPRUN_NUM_OF_APPS);
-	old = rump_fsdom_switch(&rump_app_lwp_tbl[args->domid]);
+	//old = rump_fsdom_switch(&rump_app_lwp_tbl[args->domid]);
 
 	switch (args->call_id) {
 		case OPEN:
@@ -63,6 +64,28 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 				SCARG(&syscall_args, mode),
 				ret, retval);
 #endif
+			break;
+		}
+
+		case OPENAT:
+		{
+			struct sys_openat_args syscall_args;
+			struct sys_openat_args *uap = (struct sys_openat_args *)((uint64_t)args->uap + rump_offset);
+
+			SCARG(&syscall_args, fd) = SCARG(uap, fd);
+			SCARG(&syscall_args, path) = (char *)((uint64_t)SCARG(uap, path) + rump_offset);
+		        SCARG(&syscall_args, oflags) = SCARG(uap, oflags);
+			SCARG(&syscall_args, mode) = SCARG(uap, mode);
+
+			ret = sys_openat(curlwp, (const struct sys_openat_args *)&syscall_args, &retval);
+//#ifdef DEBUG
+			aprint_normal("OPENAT fd: %d, path: %s, oflags: %d, mode: %d, ret: %d, retval: %ld\n",
+				SCARG(&syscall_args, fd),
+				SCARG(&syscall_args, path),
+				SCARG(&syscall_args, oflags),
+				SCARG(&syscall_args, mode),
+				ret, retval);
+//#endif
 			break;
 		}
 
@@ -319,6 +342,22 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
                         break;
                 }
 
+		case RMDIR:
+                {
+                        struct sys_rmdir_args syscall_args;
+                        struct sys_rmdir_args *uap = (struct sys_rmdir_args *)((uint64_t)args->uap + rump_offset);
+
+                        SCARG(&syscall_args, path) = (char *)((uint64_t)SCARG(uap, path) + rump_offset);
+
+                        ret = sys_rmdir(curlwp, (const struct sys_rmdir_args *)&syscall_args, &retval);
+#ifdef DEBUG
+                        aprint_normal("RMDIR path: %s, ret: %d, retval: %ld\n",
+                                SCARG(&syscall_args, path),
+                                ret, retval);
+#endif
+                        break;
+                }
+
 		case CHOWN:
                 {
                         struct sys_chown_args syscall_args;
@@ -338,25 +377,39 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 #endif
 			break;
 		}
-#if 0
-		case DUP2:
+
+		case CHDIR:
                 {
-                        struct sys_dup2_args syscall_args;
-                        struct sys_dup2_args *uap = (struct sys_dup2_args *)((uint64_t)args->uap + rump_offset);
+                        struct sys_chdir_args syscall_args;
+                        struct sys_chdir_args *uap = (struct sys_chdir_args *)((uint64_t)args->uap + rump_offset);
 
-                        SCARG(&syscall_args, from) = SCARG(uap, from);
-                        SCARG(&syscall_args, to) = SCARG(uap, to);
+                        SCARG(&syscall_args, path) = (char *)((uint64_t)SCARG(uap, path) + rump_offset);
 
-                        ret = sys_dup2(curlwp, (const struct sys_dup2_args *)&syscall_args, &retval);
+                        ret = sys_chdir(curlwp, (const struct sys_chdir_args *)&syscall_args, &retval);
 #ifdef DEBUG
-                        aprint_normal("DUP2 from: %d, to: %d, ret: %d, retval: %ld\n",
-				SCARG(&syscall_args, from),
-				SCARG(&syscall_args, to),
+                        aprint_normal("CHDIR path: %s, ret: %d, retval: %ld\n",
+                                SCARG(&syscall_args, path),
                                 ret, retval);
 #endif
-			break;
-		}
+                        break;
+                }
+
+		case UNLINK:
+                {
+                        struct sys_unlink_args syscall_args;
+                        struct sys_unlink_args *uap = (struct sys_unlink_args *)((uint64_t)args->uap + rump_offset);
+
+                        SCARG(&syscall_args, path) = (char *)((uint64_t)SCARG(uap, path) + rump_offset);
+
+                        ret = sys_unlink(curlwp, (const struct sys_unlink_args *)&syscall_args, &retval);
+#ifdef DEBUG
+                        aprint_normal("UNLINK path: %s, ret: %d, retval: %ld\n",
+                                SCARG(&syscall_args, path),
+                                ret, retval);
 #endif
+                        break;
+                }
+
 		default:
 		{
 			aprint_normal("Unsupported operation\n");
@@ -367,7 +420,7 @@ static void rump_fsdom_work(struct work *wk, void *dummy)
 	args->ret  = ret;
 	args->retval = retval;
 
-	rump_fsdom_switch(&old);
+	//rump_fsdom_switch(&old);
 
 	rumpuser_fsdom_send(args);
 }
@@ -376,7 +429,7 @@ void rump_fsdom_init_workqueue(void)
 {
 	int error, i;
 	if ((error = workqueue_create(&rump_fsdom_workqueue, "fsdoned", \
-            rump_fsdom_work, NULL, PRI_NONE, IPL_NONE, WQ_MPSAFE))) {
+            rump_fsdom_work, NULL, PRI_VM, IPL_VM, WQ_MPSAFE))) {
 		aprint_normal("workqueue_create fails, error: %d\n", error);
 	}
 
@@ -392,7 +445,9 @@ void rump_fsdom_set_offset(uint64_t offset)
 
 void rump_fsdom_enqueue(void *wk)
 {
+	rump_schedule_cpu(curlwp);
 	workqueue_enqueue(rump_fsdom_workqueue, (struct work *)wk, NULL);
+	rump_unschedule_cpu(curlwp);
 }
 
 #else /* frontend */

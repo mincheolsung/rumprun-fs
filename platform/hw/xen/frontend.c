@@ -140,7 +140,7 @@ retry:
                 }
         }
 
-        if (++fails < 1024) {
+        if (++fails < 1024*1024*1024) {
                 bmk_sched_yield();
                 goto again;
         }
@@ -227,11 +227,10 @@ int frontend_send(void *args, long int *retval)
                         break;
                 }
 
-		bmk_printf("goto sleep1\n");
+		bmk_printf("fring empty, goes to sleep\n");
 		rumpuser_mutex_enter_nowrap(frontend_mtx);
 		rumpuser_cv_wait_nowrap(frontend_cv, frontend_mtx);
       		rumpuser_mutex_exit(frontend_mtx);
-		bmk_printf("wakeup1\n");
 	}
 
 	syscall_args->thread = bmk_current;
@@ -248,7 +247,7 @@ int frontend_send(void *args, long int *retval)
         }
 
 	while (1) {
-		if (++loop < 1024) {
+		if (++loop < 8192) {
 			bmk_sched_yield();
 			if (atomic_load(&syscall_args->done) == 1) {
 				break;

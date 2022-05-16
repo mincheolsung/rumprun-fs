@@ -55,7 +55,6 @@ rumprun_platefs(const char **dirs, size_t ndirs,
 		if ((fd = rump_sys_open(refs[i].ref_fname,
 		    RUMP_O_CREAT | RUMP_O_RDWR | RUMP_O_EXCL, 0777)) == -1)
 			bmk_platform_halt("platefs: open");
-		bmk_printf("open %s\n", refs[i].ref_fname);
 		if (rump_sys_fcntl(fd, RUMPFS_FCNTL_EXTSTORAGE_ADD,
 		    &refs[i].ref_es) == -1)
 			bmk_platform_halt("platefs: fcntl");

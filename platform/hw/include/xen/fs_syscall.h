@@ -94,3 +94,11 @@ struct sys_dup2_args {
         syscallarg(int) to;
 };
 check_syscall_args(sys_dup2)
+
+struct sys_openat_args {
+        syscallarg(int) fd;
+        syscallarg(const char *) path;
+        syscallarg(int) oflags;
+        syscallarg(mode_t) mode;
+};
+check_syscall_args(sys_openat)

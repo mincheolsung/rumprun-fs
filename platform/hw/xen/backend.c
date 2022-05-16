@@ -163,17 +163,19 @@ retry:
 		fails = 0;
 		slot = (syscall_args_t *)(backend_buf[dom] + idx * FSDOM_DATA_SIZE);
 		slot->domid = (uint64_t)dom;
+
 		rump_fsdom_enqueue(&slot->wk);
 
 		lfring_enqueue((struct lfring *) backend_fring[dom]->ring,
                         FSDOM_RING_ORDER, idx, false);
 
 		if (atomic_load(&backend_fring[dom]->readers) <= 0) {
+			bmk_printf("send interrupt to frontend_sender\n");
                         minios_notify_remote_via_evtchn(frontend_sender_port[dom]);
                 }
 	}
 
-	if (++fails < 1024) {
+	if (++fails < 1024*1024*1024) {
 		bmk_sched_yield();
 		goto again;
 	}
@@ -236,6 +238,7 @@ void backend_send(void *args)
                         break;
                 }
 
+		bmk_printf("fring empty, goes to sleep\n");
 		rumpuser_mutex_enter_nowrap(backend_mtx[dom]);
                 rumpuser_cv_wait_nowrap(backend_cv[dom], backend_mtx[dom]);
                 rumpuser_mutex_exit(backend_mtx[dom]);

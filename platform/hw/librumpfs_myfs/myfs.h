@@ -1,3 +1,6 @@
+typedef long int register_t;
+extern void(*rumpuser_fsdom_init)(void);
+
 typedef struct syscall_args {
         uint64_t wk; /* struct work */
 	void *argp;

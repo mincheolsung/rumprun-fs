@@ -41,7 +41,6 @@ static int find_idx(int l_fd)
 static int get_free_idx(int fd)
 {
 	int i;
-
 	for (i = 0; i < NDFILE; i++) {
 		if (fd_table[i].l_fd == -1) {
 			return i;
@@ -107,8 +106,6 @@ int rumpuser_fsdom_setfd(int l_fd, int r_fd)
 	new_fd->l_fd = l_fd;
 	new_fd->r_fd = r_fd;
 
-	//printf_fdtbl();
-
 	return 0;
 }
 
@@ -170,6 +167,36 @@ int rumpuser_fsdom_open(struct lwp *l, const void *uap, register_t *retval)
                                 ret, *retval);
 #endif
         return ret;
+}
+
+int rumpuser_fsdom_openat(struct lwp *l, const void *uap, register_t *retval)
+{
+        int ret;
+	int l_fd, r_fd;
+        syscall_args_t args;
+	args.argp = &args;
+	args.uap = (void *)uap;
+        args.call_id = OPENAT;
+
+	l_fd = SCARG((struct sys_openat_args *)uap, fd);
+
+	if ((r_fd = get_remote_fd(l_fd)) < 0) {
+		bmk_printf("fails to find remote fd\n");
+		return 9; /* EBADF */
+	} else {
+		SCARG((struct sys_openat_args *)uap, fd) = r_fd;
+		ret = frontend_send(&args, retval);
+	}
+
+#ifdef DEBUG
+	bmk_printf("OPENAT fd: %d, path: %s, oflags: %d, mode: %d, ret: %d, retval: %ld\n",
+				SCARG((struct sys_openat_args *)uap, fd),
+				SCARG((struct sys_openat_args *)uap, path),
+				SCARG((struct sys_openat_args *)uap, oflags),
+				SCARG((struct sys_openat_args *)uap, mode),
+                                ret, *retval);
+#endif
+	return ret;
 }
 
 int rumpuser_fsdom_read(struct lwp *l, const void *uap, register_t *retval)
@@ -252,13 +279,7 @@ int rumpuser_fsdom_fcntl(struct lwp *l, const void *uap, register_t *retval)
 		SCARG((struct sys_fcntl_args *)uap, fd) = r_fd;
 		ret = frontend_send(&args, retval);
 	}
-/*
-	bmk_printf("FCNTL fd:%d\n", SCARG((struct sys_fcntl_args *)uap, fd));
-	bmk_printf("     cmd:%d\n", SCARG((struct sys_fcntl_args *)uap, cmd));
-	bmk_printf("     arg:%p\n", SCARG((struct sys_fcntl_args *)uap, arg));
-	bmk_printf("     ret:%d\n", ret);
-	bmk_printf("  retval:%ld\n", *retval);
-*/
+
 #ifdef DEBUG
         bmk_printf("%s FCNTL fd: %d, cmd: %d, ret: %d, retval: %ld\n",
 				r_fd == -1 ? "Local" : "Remote",
@@ -282,13 +303,11 @@ int rumpuser_fsdom_close(struct lwp *l, const void* uap, register_t *retval)
 
 	if ((r_fd = get_remote_fd(l_fd)) == -1) {
 		ret = rump_local_syscall(l, uap, retval, CLOSE);
-		//bmk_printf("close local %d\n", l_fd);
 	} else if (r_fd == -2) {
 		bmk_printf("fails to find remote fd\n");
         } else {
                 SCARG((struct sys_close_args *)uap, fd) = r_fd;
 		ret = frontend_send(&args, retval);
-		//bmk_printf("close remote %d\n", r_fd);
 		if (ret == 0) {
 			rump_fsdom_fd_abort(l_fd);
 		}
@@ -533,6 +552,23 @@ int rumpuser_fsdom_mkdir(struct lwp *l, const void *uap, register_t *retval)
         return ret;
 }
 
+int rumpuser_fsdom_rmdir(struct lwp *l, const void *uap, register_t *retval)
+{
+        int ret;
+        syscall_args_t args;
+        args.argp = &args;
+        args.uap = (void *)uap;
+        args.call_id = RMDIR;
+
+        ret = frontend_send(&args, retval);
+
+#ifdef DEBUG
+        bmk_printf("RMDIR ret: %d, retval: %ld\n",
+				ret, *retval);
+#endif
+        return ret;
+}
+
 int rumpuser_fsdom_chown(struct lwp *l, const void *uap, register_t *retval)
 {
         int ret;
@@ -587,9 +623,40 @@ int rumpuser_fsdom_dup2(struct lwp *l, const void *uap, register_t *retval)
                                 SCARG((struct sys_dup2_args *)uap, to),
                                 ret, *retval);
 #endif
-
-	//printf_fdtbl();
         return ret;
 }
 
+int rumpuser_fsdom_chdir(struct lwp *l, const void *uap, register_t *retval)
+{
+        int ret;
+        syscall_args_t args;
+        args.argp = &args;
+        args.uap = (void *)uap;
+        args.call_id = CHDIR;
+
+        ret = frontend_send(&args, retval);
+
+#ifdef DEBUG
+        bmk_printf("CHDIR ret: %d, retval: %ld\n",
+				ret, *retval);
+#endif
+        return ret;
+}
+
+int rumpuser_fsdom_unlink(struct lwp *l, const void *uap, register_t *retval)
+{
+        int ret;
+        syscall_args_t args;
+        args.argp = &args;
+        args.uap = (void *)uap;
+        args.call_id = UNLINK;
+
+        ret = frontend_send(&args, retval);
+
+#ifdef DEBUG
+        bmk_printf("UNLINK ret: %d, retval: %ld\n",
+				ret, *retval);
+#endif
+        return ret;
+}
 #endif // FSDOM_FRONTEND
